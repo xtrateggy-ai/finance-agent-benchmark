@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+fab/
+tmp/
+tmp/*
+app/tmp/*
+data/
+data/sec/
+data/sec/*
+data/sec/*.txt
+tools/data/
+tools/data/sec/
+tools/data/sec/*
+tools/data/sec/*.txt
+app/models/*
+models/*
+*.gguf
+*.egg-info/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# CRITICAL - Secrets (NEVER COMMIT!)
+app/secrets/secrets.env
+secrets/secrets.env
+secrets/*.key
+secrets/*.pem
+.env
+*.key
+*.pem
+
+# Logs
+*.log
+logs/
+test_results/
+*.txt
+*.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker
+.dockerignore
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/

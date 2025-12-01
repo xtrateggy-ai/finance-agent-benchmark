@@ -1,0 +1,28 @@
+name = "Finance Green Orchestrator"
+description = '''
+A2A orchestrator for the Kaggle Financial-QA-10k benchmark. 
+Hosts MCP server exposing financial tools (Google search, EDGAR, HTML parsing).
+Evaluates white agent on 7,000 SEC 10-K questions.
+'''
+url = "http://127.0.0.1:9000"
+version = "1.0.0"
+
+defaultInputModes = ["text"]
+defaultOutputModes = ["text"]
+
+[capabilities]
+streaming = false
+
+[[skills]]
+id = "mcp_tool_host"
+name = "MCP Tool Host"
+description = "Hosts FastAPI MCP server with /schema and /execute endpoints for tool discovery and execution."
+tags = ["mcp", "tool-calling", "finance"]
+examples = ["Expose google_search, edgar_search, parse_html_page tools via MCP."]
+
+[[skills]]
+id = "benchmark_evaluator"
+name = "Benchmark Evaluator"
+description = "Runs evaluation on Kaggle Financial-QA-10k dataset, computes exact-match accuracy."
+tags = ["evaluation", "accuracy", "benchmark"]
+examples = ["Run 7000 QA tasks and return accuracy metric."]

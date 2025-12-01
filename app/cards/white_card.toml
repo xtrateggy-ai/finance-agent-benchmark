@@ -1,0 +1,28 @@
+name = "Finance White Reasoner"
+description = '''
+Blind LLM reasoner (Gemini via LiteLLM) for financial QA.
+Discovers MCP tools dynamically, calls them in series, 
+if required, and returns final answer.
+'''
+url = "http://127.0.0.1:8000"
+version = "1.0.0"
+
+defaultInputModes = ["text"]
+defaultOutputModes = ["text"]
+
+[capabilities]
+streaming = false
+
+[[skills]]
+id = "llm_tool_caller"
+name = "LLM Tool Caller"
+description = "Uses LiteLLM to call MCP tools (google_search, edgar_search, etc.) with up to 5 retries."
+tags = ["llm", "tool-calling", "reasoning"]
+examples = ["Call serp_search with query='NVIDIA 10-K filing 2024'"]
+
+[[skills]]
+id = "finance_qa"
+name = "Financial QA Reasoner"
+description = "Answers SEC 10-K questions using retrieved data and reasoning."
+tags = ["finance", "10-k", "qa"]
+examples = ["What was NVIDIA's revenue in 2023?"]

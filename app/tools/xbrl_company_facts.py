@@ -8,6 +8,7 @@ import backoff
 import sys
 import asyncio
 from typing import Dict
+from tools.edgar_submissions import normalize_cik_to_10
 
 # --- SEC-Compliant Headers ---
 SEC_HEADERS = {
@@ -16,22 +17,6 @@ SEC_HEADERS = {
 }
 
 BASE_URL = "https://data.sec.gov/api/xbrl/companyfacts"
-
-
-# ------------------------
-# Helpers
-# ------------------------
-def normalize_cik(cik: str) -> str:
-    """
-    Convert any numeric CIK to 10-digit string with leading zeros.
-    """
-    if not cik:
-        return None
-    digits = "".join(filter(str.isdigit, str(cik)))
-    if not digits or len(digits) > 10:
-        return None
-    return digits.zfill(10)
-
 
 def is_rate_limit_error(exc):
     """
@@ -56,7 +41,7 @@ async def fetch_companyfacts(cik_input: str) -> dict:
     """
     Fetch all XBRL company facts for a given CIK.
     """
-    cik10 = normalize_cik(cik_input)
+    cik10 = normalize_cik_to_10(cik_input)
     if not cik10:
         return {"error": "Invalid CIK. Provide a numeric value up to 10 digits (e.g., '320193' or '0000320193')."}
 

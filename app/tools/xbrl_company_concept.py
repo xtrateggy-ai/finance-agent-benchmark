@@ -8,6 +8,7 @@ import backoff
 import sys
 import json
 from typing import Optional
+from tools.edgar_submissions import normalize_cik_to_10
 
 # --- Required SEC Headers ---
 SEC_HEADERS = {
@@ -16,17 +17,6 @@ SEC_HEADERS = {
 }
 
 BASE_URL = "https://data.sec.gov/api/xbrl/companyconcept"
-
-
-# --------------------- Helpers ---------------------
-
-def normalize_cik(cik: str) -> str:
-    """
-    Convert CIK to 10-digit string with leading zeros.
-    """
-    cik_str = str(cik).strip()
-    digits = "".join(filter(str.isdigit, cik_str))
-    return digits.zfill(10)
 
 
 def normalize_taxonomy(tax: str) -> str:
@@ -83,7 +73,7 @@ async def fetch_company_concept(cik10: str, taxonomy: str, concept: str) -> dict
         dict containing full SEC JSON OR {"error": "..."}
     """
 
-    cik_norm = normalize_cik(cik10)
+    cik_norm = normalize_cik_to_10(cik10)
     tax_norm = normalize_taxonomy(taxonomy)
     concept_norm = normalize_concept(concept)
 

@@ -11,10 +11,10 @@ fab/
 tmp/
 tmp/*
 app/tmp/*
-data/
 data/sec/
 data/sec/*
 data/sec/*.txt
+data/*.zip
 tools/data/
 tools/data/sec/
 tools/data/sec/*
@@ -42,7 +42,12 @@ secrets/*.pem
 logs/
 test_results/
 *.txt
+
+# Ignore ALL CSVs by default
 *.csv
+
+# BUT keep the public subset (force-include this one)
+!data/public.csv
 
 # IDE
 .vscode/

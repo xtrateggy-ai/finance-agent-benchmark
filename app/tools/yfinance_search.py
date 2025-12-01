@@ -416,7 +416,7 @@ def _fallback_ticker_lookup(company_name: str) -> dict:
     }
 
 
-def get_company_name_from_ticker(ticker: str) -> str:
+async def get_company_name_from_ticker(ticker: str) -> str:
     """
     Convert ticker symbol to official company name.
     

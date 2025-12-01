@@ -458,7 +458,7 @@ class GreenAgent:
                 else:
                     if ticker_symbol != None and wcompany_name != None:
                         # Adjust company name, if required (e.g. change US Stell to United States Steel)
-                        wcompany_name = get_company_name_from_ticker(ticker_symbol)
+                        wcompany_name = await get_company_name_from_ticker(ticker_symbol)
                         print(f"[GREEN] Company name received ={company_name} found={wcompany_name}")
                         
                         # Company not found, so stick to what was received as parameter.

@@ -14,7 +14,7 @@ async def google_search(query: str, verbose: False) -> dict:
     #if verbose:
     print(f"[GOOGLE_SEARCH] Query={query}", file=sys.stderr)
         
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = os.getenv("GOOGLE_SEARCH_API_KEY")
     cx = os.getenv("GOOGLE_CX")
     if not api_key or not cx:
         #if verbose:

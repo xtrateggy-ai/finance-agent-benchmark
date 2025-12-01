@@ -24,7 +24,12 @@ from fastmcp import FastMCP
 
 
 # Import tools
-from tools import *
+from tools.company_CIK import resolve_cik
+from tools.edgar_submissions import submissions_tool
+from tools.google_search import google_search
+from tools.xbrl_company_concept import fetch_company_concept
+from tools.xbrl_company_facts import fetch_companyfacts
+from tools.xbrl_frames import fetch_frames
 
 from utils.llm_judge import LLMJudge
 from utils.llm_manager import safe_llm_call
@@ -213,8 +218,21 @@ class GreenAgent:
         @self.mcp_server.tool()
         async def submissions_handler(cik: str) -> dict:
             """
-            Tool entrypoint for MCP Agent.
-            Accepts CIK (any length), normalizes it, fetches submissions.
+            Returns the full SEC filing history and metadata for a company using its CIK.
+            This includes:
+
+                current and former company names
+
+                ticker symbols and exchanges
+
+                the most recent 1,000 (or at least 1 year) of filings
+
+                references to additional filing JSON files when more historical data exists
+
+            Accepts any CIK format (short or long). The tool automatically normalizes it to the official 10-digit format before calling:
+            https://data.sec.gov/submissions/CIK##########.json
+
+            This endpoint provides the companys complete submissions index in a compact structured JSON format.
             """
             if self.verbose:
                 print(f"[GREEN] submissions_handler received CIK: {cik}", file=sys.stderr)
@@ -223,9 +241,6 @@ class GreenAgent:
                 return await submissions_tool(cik)
             except Exception as e:
                 return {"error": str(e)}
-
-        # return submissions_handler
-    
 
         # ---------------------------
         # fetch xbrl company concepts
@@ -237,8 +252,28 @@ class GreenAgent:
         concept: str,
         ) -> dict:
             """
-                XBRL Company-Concept Tool:
-                Fetch all XBRL facts for a CIK + taxonomy + concept.
+            Fetches all XBRL facts for a given company (CIK) and concept (taxonomy + tag) from the SEC’s official company-concept API.
+
+            Returns a JSON structure that includes:
+
+                every disclosure the company has filed for the specified concept
+
+                facts grouped by unit of measure (e.g., USD, CAD, shares, USD-per-shares)
+
+                all reported values across time, with their filing dates, periods, and metadata
+
+            The tool automatically normalizes:
+
+                CIK → 10-digit official format
+
+                taxonomy → lowercase (e.g., us-gaap, ifrs-full)
+
+                concept → cleaned SEC tag (e.g., Revenues, AccountsPayableCurrent)
+
+            Endpoint shape used:
+            https://data.sec.gov/api/xbrl/companyconcept/CIK##########/{taxonomy}/{concept}.json
+
+            Use this tool when the question asks for specific financial metrics (e.g., revenue, liabilities, cash, net income) across multiple periods for one company.
             """
 
             if self.verbose:
@@ -259,8 +294,32 @@ class GreenAgent:
         @self.mcp_server.tool()
         async def companyfacts_handler(cik: int) -> dict:
             """
-            Tool entrypoint for MCP/LLM:
-            Fetch all XBRL company facts for a CIK.
+            Fetches all XBRL facts for a company (identified by CIK) in a single API call using the SEC companyfacts endpoint.
+
+            This returns the full set of:
+
+                every financial concept the company has reported
+
+                grouped by taxonomy (e.g., us-gaap, ifrs-full)
+
+                each concept containing arrays of facts across all periods
+
+                metadata such as units, filing dates, periods, and presentation info
+
+            Endpoint shape used:
+                https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json
+
+            Use this tool when a question requires:
+
+                multiple financial metrics at once
+
+                scanning all available tags for a company
+
+                finding which concepts exist (e.g., whether “Revenues” or “OperatingIncomeLoss” is present)
+
+                analyzing historical values across multiple fiscal periods
+
+            The tool automatically normalizes the CIK to the required 10-digit SEC format.
             """
             if self.verbose:
                 print(f"[GREEN] Calling companyfacts_handler for CIK: {cik}", file=sys.stderr)
@@ -281,15 +340,29 @@ class GreenAgent:
             period: str,
         ) -> dict:
             """
-            XBRL Frames Tool
-            Fetch the most recent fact for a reporting entity based on:
-            - taxonomy (us-gaap, ifrs-full, etc.)
-            - concept (AccountsPayableCurrent, NetIncomeLoss, etc.)
-            - unit (USD, USD-per-shares, pure)
-            - period (CY2023, CY2023Q2, CY2023Q2I)
+            Fetches a single latest filed XBRL fact for a given concept across all reporting entities for a specific calendar period.
+            It uses the official XBRL Frames API:
+
+                /api/xbrl/frames/{taxonomy}/{concept}/{unit}/{period}.json
+
+            taxonomy: e.g., us-gaap, ifrs-full
+
+            concept: e.g., Revenues, AccountsPayableCurrent
+
+            unit: e.g., USD, pure, or compound units like USD-per-shares
+
+            period:
+
+                Annual: CY2023
+
+                Quarterly: CY2023Q2
+
+                Instantaneous: CY2023Q2I
+
+            The API returns one aggregated fact per entity that best matches the specified calendar period.
             """
 
-            if verbose:
+            if self.verbose:
                 print(f"[GREEN] Calling frames_handler for {taxonomy}/{concept}/{unit}/{period}", file=sys.stderr)
 
             try:

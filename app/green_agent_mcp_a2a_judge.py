@@ -30,6 +30,8 @@ from tools.google_search import google_search
 from tools.xbrl_company_concept import fetch_company_concept
 from tools.xbrl_company_facts import fetch_companyfacts
 from tools.xbrl_frames import fetch_frames
+from tools.yfinance_search import *
+from tools.today_date import get_today_date
 
 from utils.llm_judge import LLMJudge
 from utils.llm_manager import safe_llm_call
@@ -387,6 +389,307 @@ class GreenAgent:
             except Exception as e:
                 return {"error": str(e)}
 
+        # --------------------------
+        # Yfinance search Tool
+        # --------------------------
+        # ------------------------------------------------------------
+        # Ticker Lookup (helps white agent use yfinance tools)
+        # ------------------------------------------------------------
+        @self.mcp_server.tool()
+        async def get_ticker_symbol_handler(
+            company_name: str
+        ) -> dict:
+            """
+            Convert a company name to its US stock ticker symbol.
+            
+            ⚠️ ONLY RETURNS US EXCHANGE TICKERS (NYSE, NASDAQ, AMEX, etc.)
+            
+            USE THIS TOOL FIRST when you need to call get_financials_metrics or 
+            get_financial_ratios, which require ticker symbols.
+            
+            Args:
+                company_name: Company name, e.g., "Apple", "Netflix", "US Steel", "Airbnb"
+            
+            Returns:
+                SUCCESS (US company):
+                {
+                    "company_name": "Netflix Inc",
+                    "ticker": "NFLX",
+                    "exchange": "NASDAQ"
+                }
+                
+                ERROR (Non-US company):
+                {
+                    "error": "No US exchange listing found for 'Nestle'",
+                    "company_name": "Nestle",
+                    "non_us_results": {
+                        "tickers": ["NESN"],
+                        "exchanges": ["SWX"]
+                    },
+                    "suggestion": "Try sec_search_handler with company_name instead"
+                }
+                
+                ERROR (Not found):
+                {
+                    "error": "Ticker not found",
+                    "company_name": "Unknown Corp",
+                    "suggestion": "Try sec_search_handler with company_name instead"
+                }
+            
+            COMMON US TICKERS:
+            - Apple → AAPL
+            - Netflix → NFLX  
+            - US Steel / United States Steel → X
+            - Airbnb → ABNB
+            - Microsoft → MSFT
+            - Amazon → AMZN
+            - Tesla → TSLA
+            - Google/Alphabet → GOOGL
+            
+            NON-US COMPANIES (will return error):
+            - Nestle → Swiss (SWX exchange)
+            - Toyota → Japanese (JPX exchange)
+            - HSBC → UK (LSE exchange)
+            
+            For non-US companies, use sec_search_handler instead.
+            """
+            try:
+                print(f"[GREEN] Fetching ticker symbols for company={company_name}")
+                
+                # Search for filings
+                result = await get_ticker_symbol(
+                    company_name=company_name,
+                )
+                
+                return result                
+               
+            except Exception as e:
+                return {
+                    "error": f"Lookup failed: {str(e)}",
+                    "company_name": company_name
+                }
+        
+                # ========== NEW: YFINANCE TOOLS ==========        
+        
+        # ========== YFINANCE TOOLS: financial metric ==========   
+        @self.mcp_server.tool()
+        async def get_financial_metrics_handler(
+            ticker: str,
+            metrics: list = None,
+            period: str = "annual",
+            years: int = 3
+        ) -> dict:
+            """
+            Get financial metrics from Yahoo Finance (FREE, FAST, no SEC parsing needed).
+            
+            ═══════════════════════════════════════════════════════════════
+            ⚠️ REQUIRES TICKER SYMBOL - Use get_ticker_symbol first if needed!
+            ═══════════════════════════════════════════════════════════════
+            
+            WHEN TO USE:
+            ✓ Quick revenue, income, assets lookups
+            ✓ Multi-year financial comparisons
+            ✓ When you know the ticker symbol
+            ✓ Faster than SEC filing parsing
+            
+            WHEN TO USE sec_search_handler INSTEAD:
+            ✗ Need official/audited numbers
+            ✗ Need specific SEC form data
+            ✗ Questions about mergers, events, risk factors
+            
+            ═══════════════════════════════════════════════════════════════
+            PARAMETERS:
+            ═══════════════════════════════════════════════════════════════
+            
+            - ticker (str, REQUIRED): Stock ticker symbol
+                Examples: "AAPL", "NFLX", "X" (US Steel), "ABNB"
+                
+                💡 Don't know the ticker? Call get_ticker_symbol first!
+                
+            - metrics (list): What to retrieve. Options:
+                Revenue:     "revenue", "total_revenue"
+                Income:      "net_income", "operating_income", "gross_profit"
+                Balance:     "total_assets", "total_liabilities", "equity"
+                Cash Flow:   "operating_cash_flow", "free_cash_flow", "capex"
+                Per Share:   "eps", "shares_outstanding"
+                
+                If None, returns: revenue, net_income, operating_income,
+                                  total_assets, shares_outstanding, free_cash_flow
+                
+            - period (str): "annual" or "quarterly"
+            
+            - years (int): Number of periods to retrieve (default: 3)
+            
+            ═══════════════════════════════════════════════════════════════
+            RETURNS:
+            ═══════════════════════════════════════════════════════════════
+            {
+                "ticker": "NFLX",
+                "period": "annual",
+                "data": {
+                    "revenue": {
+                        "2024-Q4": 9246000000,    ← Values in actual dollars
+                        "2024-Q3": 8500000000,
+                        "2024-Q2": 7685000000
+                    },
+                    "net_income": {
+                        "2024-Q4": 1500000000,
+                        "2024-Q3": 1200000000
+                    }
+                },
+                "company_info": {
+                    "name": "Netflix, Inc.",
+                    "sector": "Communication Services",
+                    "currency": "USD"
+                }
+            }
+            
+            ═══════════════════════════════════════════════════════════════
+            EXAMPLES:
+            ═══════════════════════════════════════════════════════════════
+            
+            Q: "What was Netflix revenue in 2023?"
+            → get_financials_metrics(ticker="NFLX", metrics=["revenue"], years=3)
+            → Answer: data["revenue"]["2023-Q4"] (or sum quarters)
+            
+            Q: "Compare Apple and Microsoft revenue"
+            → Call twice:
+               get_financials_metrics(ticker="AAPL", metrics=["revenue"])
+               get_financials_metrics(ticker="MSFT", metrics=["revenue"])
+            
+            Q: "What are Airbnb's total assets?"
+            → First: get_ticker_symbol("Airbnb") → "ABNB"
+            → Then: get_financials_metrics(ticker="ABNB", metrics=["total_assets"])
+            """
+            try:
+                return await get_financial_metrics(
+                    ticker=ticker,
+                    metrics=metrics,
+                    period=period,
+                    years=years
+                )
+            except Exception as e:
+                return {"error": f"YFinance error: {str(e)}"}
+        
+        
+        @self.mcp_server.tool()
+        async def get_financial_ratios_handler(
+            ticker: str,
+            ratios: list = None,
+            period: str = "annual"
+        ) -> dict:
+            """
+            Calculate financial ratios from Yahoo Finance data.
+            
+            ═══════════════════════════════════════════════════════════════
+            ⚠️ REQUIRES TICKER SYMBOL - Use get_ticker_symbol first if needed!
+            ═══════════════════════════════════════════════════════════════
+            
+            WHEN TO USE:
+            ✓ Profit margin questions
+            ✓ Return on equity (ROE) / Return on assets (ROA)
+            ✓ Efficiency ratios
+            ✓ Comparative ratio analysis
+            
+            ═══════════════════════════════════════════════════════════════
+            PARAMETERS:
+            ═══════════════════════════════════════════════════════════════
+            
+            - ticker (str, REQUIRED): Stock ticker symbol
+                💡 Don't know the ticker? Call get_ticker_symbol first!
+            
+            - ratios (list): Which ratios to calculate. Options:
+                Profitability:  "profit_margin", "operating_margin", "gross_margin"
+                Returns:        "roe" (return on equity), "roa" (return on assets)
+                Efficiency:     "inventory_turnover", "asset_turnover"
+                Cash:           "fcf_margin" (free cash flow margin)
+                
+            - period (str): "annual" or "quarterly"
+            
+            ═══════════════════════════════════════════════════════════════
+            RETURNS:
+            ═══════════════════════════════════════════════════════════════
+            {
+                "ticker": "NFLX",
+                "period": "annual",
+                "ratios": {
+                    "profit_margin": {
+                        "2024-Q4": 15.5,     ← Percentage values
+                        "2024-Q3": 14.2
+                    },
+                    "roe": {
+                        "2024-Q4": 0.25,     ← Decimal (25%)
+                        "2024-Q3": 0.22
+                    }
+                }
+            }
+            
+            ═══════════════════════════════════════════════════════════════
+            EXAMPLES:
+            ═══════════════════════════════════════════════════════════════
+            
+            Q: "What is Netflix's profit margin?"
+            → get_financial_ratios(ticker="NFLX", ratios=["profit_margin"])
+            
+            Q: "What is Tesla's ROE?"
+            → get_financial_ratios(ticker="TSLA", ratios=["roe"])
+            """
+            try:
+                return await get_financial_ratios(
+                    ticker=ticker,
+                    ratios=ratios,
+                    period=period
+                )
+            except Exception as e:
+                return {"error": f"Ratio calculation error: {str(e)}"}
+        
+        # --------------------------
+        # Get Today's Date
+        # --------------------------
+        @self.mcp_server.tool()
+        async def get_today_date_handler(
+            date_format: str = "iso",
+            timezone: str = "UTC"
+        ) -> dict:
+            """
+            CRITICAL TOOL: Returns today's real-world date.
+            
+            Use this tool IMMEDIATELY at the start of any task involving dates, fiscal years,
+            filing deadlines, or "as of today" comparisons.
+            
+        
+            Why you MUST know the current date:
+            • There are questions in the database related to financial metrics and you must know if you need Q4 FY of the current year. 
+            • Dataset questions are from real 10-K, 10-Q, 8-K, etc. filings 
+            • You are running in November 2025 (or later)
+            • Without this tool, you will hallucinate the current year and fail questions like:
+                - "What is the most recent fiscal year reported?" → 2024, not 2025
+                - "Has the 2024 10-K been filed?" → Yes (filed early 2025)
+                - "What was revenue in FY2023 vs FY2024?" → needs to know 2024 is complete
+        
+            Always call this first if the question mentions:
+            "latest", "most recent", "current", "as of", "fiscal year ended", etc.
+            
+            Returns today's date in various formats.
+            
+            Args:
+                format (str): 
+                    "iso"      → 2025-11-23
+                    "full"     → Sunday, November 23, 2025
+                    "ymd"      → 20251123
+                    "mdy"      → 11/23/2025
+                    "timestamp"→ 2025-11-23T14:30:22.123456+00:00
+                timezone (str): IANA timezone, e.g. "America/New_York", "Europe/London", "UTC"
+            
+            Returns:
+                dict with all formats + metadata
+            """
+            return get_today_date(
+                date_format=date_format,
+                timezone=timezone
+            )
+        
+        
     # ------------------------------------------------------------------
     # Validate if the query is safe
     # ------------------------------------------------------------------

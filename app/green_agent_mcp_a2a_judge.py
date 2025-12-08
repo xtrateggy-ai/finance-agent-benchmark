@@ -25,10 +25,10 @@ from fastmcp import FastMCP
 
 # Import tools
 from tools.company_CIK import resolve_cik
-from tools.edgar_submissions import submissions_tool
+# from tools.edgar_submissions import submissions_tool
 from tools.google_search import google_search
 from tools.xbrl_company_concept import fetch_company_concept
-from tools.xbrl_company_facts import fetch_companyfacts
+from tools.sec_search_rag import sec_search_rag
 from tools.xbrl_frames import fetch_frames
 from tools.yfinance_search import *
 from tools.today_date import get_today_date
@@ -68,8 +68,10 @@ class GreenAgent:
         self.safety_check = bool(int(os.getenv("SAFETY_CHECK", 0))) # 1=True 0=False
         self.safety_model = os.getenv("LLM_SAFETY", "gemini/gemini-2.5-flash-lite")
 
-        self.llm_model   = os.getenv("LLM_MODEL", "gemini/gemini-2.5-flash-lite")
-        self.llm_api_key = os.getenv("LLM_API_KEY")
+        self.llm_model         = os.getenv("LLM_MODEL", "gemini/gemini-2.5-flash-lite")
+        self.llm_api_key       = os.getenv("LLM_API_KEY")
+        self.use_local_llm_rag = bool(int(os.getenv("USE_LOCAL_LLM_RAG", 1))) # 1=True 0=False
+        self.use_local_llm_gpu = bool(int(os.getenv("USE_LOCAL_LLM_GPU", 1))) # 1=True 0=False
 
         self.dataset_path = os.getenv("DATASET", "data/public.csv")
         self.use_disk_cache = bool(int(os.getenv("USE_DISK_CACHE", 1)))  # 1=True 0=False - Save SEC filings to disk.
@@ -79,6 +81,7 @@ class GreenAgent:
         self.current_task_index = 0  # Track which task we're on
         self.data_storage = {}  # For parse_html_page + retrieve_info
         self.assessment_history = []  # Track assessment results
+        self.max_filings        = int(os.getenv("MAX_FILINGS_PER_QUESTION", 50))   # Max number of filings to process per question.
         
         
         # Initialize LLM Judge for answer evaluation
@@ -201,6 +204,321 @@ class GreenAgent:
         # Handler for MCP/A2A agent tool usage
         # -------------------------------------------------------------------
         
+        @self.mcp_server.tool()
+        async def sec_search_handler(
+            company_name: str = None,
+            ticker_symbol: str = None,
+            cik: str = None,
+            question: str = None,
+            start_date: str = None, 
+            end_date: str = None,
+            keywords: List[str] = None,  
+            #num_results: int = 100,  # - num_results (int): Max filings to analyze (default: 100)
+        ) -> dict:
+            """
+            Search SEC filings (10-K, 10-Q, 8-K, DEF-14A) for company financial data and events.
+            
+            ═══════════════════════════════════════════════════════════════
+            WHEN TO USE THIS TOOL:
+            ═══════════════════════════════════════════════════════════════
+            ✓ Questions about mergers, acquisitions, divestitures
+            ✓ Questions about specific SEC filings or annual reports
+            ✓ Questions about risk factors, business operations, MD&A
+            ✓ Questions requiring official/audited financial data
+            ✓ Questions about corporate events (CEO changes, lawsuits, etc.)
+            ✓ Multi-year trend questions (revenue growth over 5 years)
+            
+            For QUICK financial metrics (revenue, assets, ratios), prefer:
+            → get_financial_metrics (faster, uses Yahoo Finance)
+            → get_financial_ratios (for margins, ROE, etc.)
+            
+            
+            ═══════════════════════════════════════════════════════════════════════
+            PARAMETER PRIORITY (Use in this order for best results):
+            ═══════════════════════════════════════════════════════════════════════
+            
+            1. ✅ BEST: ticker_symbol (if known) - Fastest, most reliable
+               Example: ticker_symbol="NFLX"
+            
+            2. ⚠️ FALLBACK: company_name (if ticker unknown) - Slower, may fail
+               Example: company_name="Netflix"
+            
+            3. ⚠️ ADVANCED: cik (rarely needed) - For specific CIK lookups
+               Example: cik="0001065280"
+            
+            ⚠️ IMPORTANT: If you called get_ticker_symbol_handler and got a ticker,
+            ALWAYS use ticker_symbol parameter instead of company_name!
+            
+            WRONG:
+            {
+              "company_name": "Barrett Business Services, Inc.",  # ❌ Slow
+              "ticker_symbol": None  # ❌ You had the ticker but didn't use it!
+            }
+            
+            RIGHT:
+            {
+              "company_name": "Barrett Business Services",  # Optional (for context)
+              "ticker_symbol": "BBSI",  # ✅ Use the ticker you looked up!
+            }
+            
+            ═══════════════════════════════════════════════════════════════════════
+            PARAMETERS:
+            ═══════════════════════════════════════════════════════════════════════
+            
+            - company_name (str, OPTIONAL): Use common name OR official name
+                Examples: "Apple", "Netflix", "US Steel", "United States Steel"
+                
+            - ticker_symbol (str, OPTIONAL but PREFERRED): Stock ticker
+                Examples: "AAPL", "NFLX", "X", "BBSI"
+                ⚠️ Use this if you got ticker from get_ticker_symbol_handler!
+
+            - question (str, REQUIRED): Question for the LLM to provide an answer.
+                
+            - start_date (str, REQUIRED): Format "YYYY-MM-DD"
+                ⚠️ USE WIDE DATE RANGES for better results:
+                - For recent events: last 2 years (e.g., "2023-01-01")
+                - For mergers/acquisitions: 5+ years (e.g., "2020-01-01")
+                - For historical trends: 10 years (e.g., "2015-01-01")
+                
+            - end_date (str, REQUIRED): Format "YYYY-MM-DD"
+                Usually today or recent: "2025-12-31"
+                ⚠️ Use get_today_date_handler to get current date!
+                
+            - keywords (List[str], OPTIONAL): Single words only, NOT phrases
+                Good: ["merger", "acquisition", "Nippon"]
+                Bad: ["merger with Nippon Steel"]  ← Won't work!
+                
+            
+            
+            ═══════════════════════════════════════════════════════════════════════
+            EXAMPLE USAGE:
+            ═══════════════════════════════════════════════════════════════════════
+            
+            Scenario: "What board members were nominated in 2024 for BBSI?"
+            
+            Step 1: Get ticker (if not known)
+            → get_ticker_symbol_handler(company_name="BBSI")
+            → Returns: {"ticker": "BBSI", "company_name": "Barrett Business Services, Inc."}
+            
+            Step 2: Search SEC filings with TICKER
+            → sec_search_handler(
+                ticker_symbol="BBSI",  # ✅ Use the ticker!
+                start_date="2024-01-01",
+                end_date="2024-12-31",
+                keywords=["board", "director", "nomination"]
+            
+            ═══════════════════════════════════════════════════════════════
+            RETURNS:
+            ═══════════════════════════════════════════════════════════════
+            {
+                    "date": filing["filing_date"],
+                    "form": filing["form"],
+                    "accession": filing["accession_number"],
+                    "url": doc_url,                        
+                    "question": question,
+                    "answer": answer,  # ← Direct answer, not structured data!
+                    "method": "llm_rag_extraction"
+            }
+                OR
+                
+            {
+              "company": str,               // canonical company name
+              "ticker_symbol": str,         // company's ticker symbol
+              "cik": str,                   // company’s CIK
+              "sic": str,                   // company's sic
+              "sic_description": str,       / company's sic desciption 
+              "timeline": [
+                {
+                "date": str,
+                "form": str,
+                "accession": str,
+                "url": str,
+                "financial_metrics": [
+                    {
+                        'total_revenue': ["12,345"],      ← Values in MILLIONS USD
+                        'total_assets': ["20,451"],
+                        'total_liabilities': str',
+                        'stockholders_equity': str",
+                        'net_income': ["500", "-125"],    ← Negative = loss
+                        'operating_cash_flow': ["2,100"]
+                    }
+                ],
+                "sections": [
+                    # 10-K 
+                    {
+                    'business': "Company description text...",
+                    'risk_factors': "Risk factors text...",
+                    'mda': "Management discussion text...",
+                    'quantitative_qualitative': str,
+                    'financial_statements_item': str,
+                    'balance_sheet': str,
+                    'income_statement': str',
+                    'cash_flow': str',
+                    'stockholders_equity': str',
+                    'financial_notes': str',
+                    'controls': str',
+                    'paid_memberships': str,
+                    'streaming_members': str,
+                    'average_memberships': str,
+                    'arppu': str,
+                    'gross_margin_pct': str,
+                    'operating_margin_pct': str,
+                    'pretax_margin_pct': str,
+                    'arppu_calculated': str
+                    },
+                
+                    #8-K
+                    {
+                    'item_1_01': str,
+                    'item_2_01': str,
+                    'item_2_02': str,
+                    'item_5_02': str,
+                    'item_8_01': str,
+                    'ma_activity': str,
+                    }
+ 
+                ],
+                "guidance_data":  List,
+                "board_nominees": List,
+                "sections_found": list(sections.keys()),
+                "metrics_found":  list(financial_metrics.keys())    
+                },
+              "total_found": int,
+            }
+ 
+              OR
+            
+            {  "error": str,   // Description of the error, if error found.
+               "company": str  // Company name
+            }  
+
+            ═══════════════════════════════════════════════════════════════
+            HOW TO EXTRACT ANSWERS:
+            ═══════════════════════════════════════════════════════════════
+            
+            For NUMERIC answers (revenue, assets, etc.):
+            → Look in: timeline[0]["financial_metrics"]["total_revenue"][0]
+            → Values are in MILLIONS (e.g., "20,451" = $20.451 billion)
+            → Negative shown as "-125" (indicates a loss)
+            
+            For TEXT answers (mergers, events, operations):
+            → Look in: timeline[0]["sections"]["ma_activity"] for M&A
+            → Look in: timeline[0]["sections"]["business"] for operations
+            → Look in: timeline[0]["sections"]["risk_factors"] for risks
+            
+            ═══════════════════════════════════════════════════════════════
+            EXAMPLES:
+            ═══════════════════════════════════════════════════════════════
+            
+            Q: "How has US Steel addressed its merger with Nippon Steel?"
+            → sec_search_handler(
+                  company_name="US Steel",
+                  ticker_symbol="X",
+                  question="How has US Steel addressed its merger with Nippon Steel?",
+                  start_date="2020-01-01",     ← Wide range for M&A history
+                  end_date="2025-12-31",
+                  keywords=["merger", "Nippon", "acquisition", "transaction"]
+              )
+            → Answer in: sections["ma_activity"] or sections["business"]
+            
+            Q: "What was Netflix revenue in 2023?"
+            → sec_search_handler(
+                  company_name="Netflix",
+                  ticker_symbol="NFLX",
+                  question="What was Netflix revenue in 2023?",
+                  start_date="2023-01-01",
+                  end_date="2023-12-31",
+                  keywords=["revenue"]
+              )
+            → Answer in: financial_metrics["total_revenue"][0]
+            
+            Q: "How has Apple's revenue changed from 2019 to 2024?"
+            → sec_search_handler(
+                  company_name="Apple",
+                  ticker_symbol="AAPL",
+                  question="How has Apple's revenue changed from 2019 to 2024?",
+                  start_date="2019-01-01",
+                  end_date="2024-12-31",
+                  keywords=["revenue"]
+              )
+            → Compare: financial_metrics["total_revenue"] across timeline entries
+
+
+            """
+            try:
+                #from tools.sec_search import sec_search
+                
+                wcompany_name = company_name
+                #print(f"[GREEN] Fetching {form_types} for {company_name} start={start_date} end={end_date}")
+                print(f"[GREEN] Fetching {wcompany_name} ticker={ticker_symbol} start={start_date} end={end_date}")
+                
+                # Look for ticker symbol, if none was passed as parameter
+                if ticker_symbol == None and wcompany_name != None:
+                    result = await get_ticker_symbol_handler(wcompany_name)
+                    wticker = result.get("ticker")
+                    if len(wticker != 0):
+                        ticker_symbol = wticker
+                        print(f"[GREEN] Found ticker={wticker} for company={company_name}")
+                else:
+                    if ticker_symbol != None and wcompany_name != None:
+                        # Adjust company name, if required (e.g. change US Stell to United States Steel)
+                        wcompany_name = await get_company_name_from_ticker(ticker_symbol)
+                        print(f"[GREEN] Company name received ={company_name} found={wcompany_name}")
+                        
+                        # Company not found, so stick to what was received as parameter.
+                        if not wcompany_name:
+                            wcompany_name = company_name 
+                        
+                try: 
+                    # Search for filings
+                    search_result = await asyncio.wait_for( sec_search_rag(
+                        company_name      = wcompany_name, 
+                        ticker_symbol     = ticker_symbol,
+                        cik               = cik,
+                        form_types        = ["10-K", "10-K/A", "10-KT", "10-KT/A","10-Q", "10-Q/A","8-K", "8-K/A","DEF 14A","DEFA14A" ],
+                        question          = question,
+                        start_date        = start_date,
+                        end_date          = end_date,
+                        keywords          = keywords,
+                        max_filings       = self.max_filings,
+                        use_disk_cache    = self.use_disk_cache,
+                        use_local_llm_rag = self.use_local_llm_rag,
+                        use_local_llm_gpu = self.use_local_llm_gpu
+                        #num_results=num_results
+                    ),
+                    timeout=300.0 #5 minutes
+                    )
+                except asyncio.TimeoutError:
+                    return {
+                        "error": "SEC search timed out after 5 minutes",
+                        "company": company_name
+                    }
+                                
+                
+                if isinstance(search_result, dict) and search_result.get("error"):
+                    return search_result
+                
+                total_found = int(search_result.get("total_found"))
+                print(f"[GREEN] total_found={total_found} search_result={str(search_result)[:200]}")
+                answer = search_result.get("answer")
+                if answer:
+                    print(f"[GREEN] Answer={answer}")
+                    
+                if total_found == 0:
+                    return {
+                        "error": f"No filings found in the SEC website",
+                        "company": company_name
+                        }                
+              
+                # Return the result from the sec_search().
+                return search_result
+                
+            except Exception as e:
+                return {
+                    "error": f"Failed to fetch SEC data: {str(e)}",
+                    "company": company_name
+                }
+        
         # company_name to CIK resolver
         @self.mcp_server.tool()
         async def cik_resolver_handler(company_name: str) -> dict:
@@ -213,34 +531,45 @@ class GreenAgent:
                 return await resolve_cik(company_name)
             except Exception as e:
                 return {"error": str(e)}
-        
-        # -----------------------
-        # fetch company submissions
-        # -----------------------
+            
+        # --------------------------
+        # fetch xbrl company facts
+        # --------------------------
         @self.mcp_server.tool()
-        async def submissions_handler(cik: str) -> dict:
+        async def companyfacts_handler(cik: int) -> dict:
             """
-            Returns the full SEC filing history and metadata for a company using its CIK.
-            This includes:
+            Fetches all XBRL facts for a company (identified by CIK) in a single API call using the SEC companyfacts endpoint.
 
-                current and former company names
+            This returns the full set of:
 
-                ticker symbols and exchanges
+                every financial concept the company has reported
 
-                the most recent 1,000 (or at least 1 year) of filings
+                grouped by taxonomy (e.g., us-gaap, ifrs-full)
 
-                references to additional filing JSON files when more historical data exists
+                each concept containing arrays of facts across all periods
 
-            Accepts any CIK format (short or long). The tool automatically normalizes it to the official 10-digit format before calling:
-            https://data.sec.gov/submissions/CIK##########.json
+                metadata such as units, filing dates, periods, and presentation info
 
-            This endpoint provides the companys complete submissions index in a compact structured JSON format.
+            Endpoint shape used:
+                https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json
+
+            Use this tool when a question requires:
+
+                multiple financial metrics at once
+
+                scanning all available tags for a company
+
+                finding which concepts exist (e.g., whether “Revenues” or “OperatingIncomeLoss” is present)
+
+                analyzing historical values across multiple fiscal periods
+
+            The tool automatically normalizes the CIK to the required 10-digit SEC format.
             """
             if self.verbose:
-                print(f"[GREEN] submissions_handler received CIK: {cik}", file=sys.stderr)
+                print(f"[GREEN] Calling companyfacts_handler for CIK: {cik}", file=sys.stderr)
 
             try:
-                return await submissions_tool(cik)
+                return await fetch_companyfacts(str(cik))
             except Exception as e:
                 return {"error": str(e)}
 
@@ -287,47 +616,6 @@ class GreenAgent:
                     taxonomy=taxonomy,
                     concept=concept,
                 )
-            except Exception as e:
-                return {"error": str(e)}
-
-        # --------------------------
-        # fetch xbrl company facts
-        # --------------------------
-        @self.mcp_server.tool()
-        async def companyfacts_handler(cik: int) -> dict:
-            """
-            Fetches all XBRL facts for a company (identified by CIK) in a single API call using the SEC companyfacts endpoint.
-
-            This returns the full set of:
-
-                every financial concept the company has reported
-
-                grouped by taxonomy (e.g., us-gaap, ifrs-full)
-
-                each concept containing arrays of facts across all periods
-
-                metadata such as units, filing dates, periods, and presentation info
-
-            Endpoint shape used:
-                https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json
-
-            Use this tool when a question requires:
-
-                multiple financial metrics at once
-
-                scanning all available tags for a company
-
-                finding which concepts exist (e.g., whether “Revenues” or “OperatingIncomeLoss” is present)
-
-                analyzing historical values across multiple fiscal periods
-
-            The tool automatically normalizes the CIK to the required 10-digit SEC format.
-            """
-            if self.verbose:
-                print(f"[GREEN] Calling companyfacts_handler for CIK: {cik}", file=sys.stderr)
-
-            try:
-                return await fetch_companyfacts(str(cik))
             except Exception as e:
                 return {"error": str(e)}
             

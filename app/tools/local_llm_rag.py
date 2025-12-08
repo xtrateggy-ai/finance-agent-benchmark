@@ -12,6 +12,11 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 import asyncio
 
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> 79263a4 (merge xbrl company facts with RAG to enhance results)
 # LlamaIndex imports
 from llama_index.core import (
     Settings, 
@@ -138,12 +143,38 @@ class QuestionAnsweringExtractor:
             storage_context = StorageContext.from_defaults(vector_store=vector_store)
             print(f"[LOCAL_LLM_RAG] After StorageContext.from_defaults()") 
             
+<<<<<<< HEAD
             index = VectorStoreIndex.from_documents(
                 data,
                 storage_context=storage_context,
                 show_progress=True
             )
                 
+=======
+            # index = VectorStoreIndex.from_documents(
+            #     data,
+            #     storage_context=storage_context,
+            #     show_progress=True
+            # )
+            
+            # add cache index
+            cache_key = hashlib.sha1((company + question[:64]).encode("utf-8")).hexdigest()
+
+            # Try to reuse an existing index for this company
+            if cache_key in self.index_cache:
+                index = self.index_cache[cache_key]
+                print("[LOCAL_LLM_RAG] Using cached index")
+            else:
+                index = VectorStoreIndex.from_documents(
+                    data,
+                    storage_context=storage_context,
+                    show_progress=True
+                )
+                self.index_cache[cache_key] = index
+                print("[LOCAL_LLM_RAG] Cached new index")
+
+            
+>>>>>>> 79263a4 (merge xbrl company facts with RAG to enhance results)
             print(f"[LOCAL_LLM_RAG] After VectorStoreIndex.from_documents()")  
             
             # Query engine
@@ -325,4 +356,8 @@ async def demo():
 
 if __name__ == "__main__":
     import asyncio
+<<<<<<< HEAD
     asyncio.run(demo())
+=======
+    asyncio.run(demo())
+>>>>>>> 79263a4 (merge xbrl company facts with RAG to enhance results)

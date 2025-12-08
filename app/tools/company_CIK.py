@@ -6,112 +6,116 @@ Uses official SEC company_tickers.json mapping
 
 import aiohttp
 import json
-import backoff
-import sys
 import difflib
-from typing import Optional
 import os
+import sys
+from typing import Optional, Tuple
 
-# -------------------------------------------------------------------
-# SEC-compliant headers
-# -------------------------------------------------------------------
+# SEC headers
 SEC_HEADERS = {
     "User-Agent": "KiarashAI/1.0 (kiarash996@yahoo.com)",
     "Accept": "application/json",
 }
 
-# Path to the official mapping
-# You can download it from:
-# https://www.sec.gov/files/company_tickers.json
-COMPANY_TICKER_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "company_tickers.json"))
-
-
+# Local file path (recommended)
+COMPANY_TICKER_FILE = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "company_tickers.json")
+)
 
 # -------------------------------------------------------------------
-# Rate limit helper for cases where you fetch the mapping remotely
-# (even if local, this keeps tool future-proof)
+# Helper: clean company name
 # -------------------------------------------------------------------
-
-def is_rate_limit_error(exc):
-    """
-    Treat 429, 503, 504 as retry-able SEC load issues
-    """
-    if isinstance(exc, aiohttp.ClientResponseError):
-        return exc.status in (429, 503, 504)
-    return False
-
+def clean_company_name(name: str) -> str:
+    return name.lower().replace(",", "").replace(".", "").strip()
 
 # -------------------------------------------------------------------
-# Load the SEC company ticker map (local file recommended)
-# Format: { "0": { "ticker": "...", "title": "...", "cik_str": "0000320193" }, ... }
+# Load local SEC ticker mapping
 # -------------------------------------------------------------------
-async def load_ticker_file() -> dict:
+async def load_local_tickers() -> dict:
     try:
         with open(COMPANY_TICKER_FILE, "r") as f:
             return json.load(f)
     except FileNotFoundError:
-        return {"error": f"Ticker file not found: {COMPANY_TICKER_FILE}"}
+        print(f"[CIK] Local ticker file not found: {COMPANY_TICKER_FILE}", file=sys.stderr)
+        return {}
     except Exception as e:
-        return {"error": str(e)}
-
+        print(f"[CIK] Failed to load ticker file: {e}", file=sys.stderr)
+        return {}
 
 # -------------------------------------------------------------------
-# Main CIK Resolver Tool
+# Fallback: fetch SEC live mapping
 # -------------------------------------------------------------------
-async def resolve_cik(company_name: str) -> dict:
+async def fetch_sec_live_tickers(headers: dict = None) -> dict:
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://www.sec.gov/files/company_tickers_exchange.json",
+                headers=headers or SEC_HEADERS,
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as resp:
+                if resp.status != 200:
+                    return {}
+                data = await resp.json()
+                return {"data": data.get("data", [])}
+    except Exception as e:
+        print(f"[CIK] Live SEC fetch failed: {e}", file=sys.stderr)
+        return {}
+
+# -------------------------------------------------------------------
+# Unified CIK Resolver
+# -------------------------------------------------------------------
+async def resolve_cik(company_name: str = None, ticker_symbol: str = None) -> Tuple[Optional[str], Optional[str]]:
     """
-    Resolve company name (even approximate) to best CIK.
-
-    Args:
-        company_name: Name or approximate name ("Aple Inc", "Apple", "Tesla Motors", etc.)
-
-    Returns:
-        dict: { "company": "...", "cik": "...", "match_type": "exact|fuzzy" }
+    Resolve company name or ticker to SEC CIK.
+    Returns (cik, ticker)
     """
+    if not company_name and not ticker_symbol:
+        return None, None
 
-    # Normalize input for LLM-safe patterns
-    clean_name = company_name.strip().lower()
+    clean_name_query = clean_company_name(company_name or "")
+    ticker_upper = (ticker_symbol or "").upper()
 
-    # Load mapping
-    mapping = await load_ticker_file()
-    if "error" in mapping:
-        return mapping  # Early return
+    # 1️⃣ Try local file first
+    mapping = await load_local_tickers()
+    name_to_cik = { clean_company_name(entry.get("title","")): entry.get("cik_str") 
+                    for entry in mapping.values() if entry.get("cik_str") }
 
-    # Build a searchable list
-    name_to_cik = {}
-    names = []
+    ticker_to_cik = { entry.get("ticker","").upper(): entry.get("cik_str") 
+                      for entry in mapping.values() if entry.get("cik_str") }
 
-    for entry in mapping.values():
-        title = entry.get("title", "").lower()
-        cik = entry.get("cik_str", "")
+    # Check exact ticker match
+    if ticker_upper in ticker_to_cik:
+        return ticker_to_cik[ticker_upper], ticker_upper
 
-        name_to_cik[title] = cik
-        names.append(title)
+    # Check exact name match
+    if clean_name_query in name_to_cik:
+        return name_to_cik[clean_name_query], ticker_upper or None
 
-    # First: Try exact match
-    if clean_name in name_to_cik:
-        return {
-            "company": company_name,
-            "matched_name": clean_name,
-            "cik": name_to_cik[clean_name],
-            "match_type": "exact"
-        }
-
-    # Second: Fuzzy semantic match using difflib (very effective for LLM-misspellings)
-    best_match = difflib.get_close_matches(clean_name, names, n=1, cutoff=0.55)
-
+    # Fuzzy name match
+    best_match = difflib.get_close_matches(clean_name_query, name_to_cik.keys(), n=1, cutoff=0.55)
     if best_match:
         match = best_match[0]
-        cik = name_to_cik[match]
-        return {
-            "company": company_name,
-            "matched_name": match,
-            "cik": cik,
-            "match_type": "fuzzy"
-        }
+        return name_to_cik[match], ticker_upper or None
 
-    # No match found
-    return {
-        "company": company_name,
-        "error": "No matching company found in SEC ticker database."
-    }
+    # 2️⃣ Fallback: SEC live JSON fetch
+    sec_data = await fetch_sec_live_tickers()
+    rows = sec_data.get("data", [])
+
+    for row in rows:
+        if len(row) < 3:
+            continue
+        cik_raw = row[0]
+        name = clean_company_name(str(row[1]))
+        ticker = str(row[2]).upper()
+
+        try:
+            cik_str = str(int(cik_raw)).zfill(10)
+        except:
+            continue
+
+        if ticker_upper and ticker_upper == ticker:
+            return cik_str, ticker
+        if clean_name_query and clean_name_query == name:
+            return cik_str, ticker
+
+    return None, None

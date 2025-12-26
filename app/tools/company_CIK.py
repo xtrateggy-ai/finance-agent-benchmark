@@ -12,9 +12,22 @@ import sys
 from typing import Optional, Tuple
 
 # SEC headers
+# SEC_HEADERS = {
+#     "User-Agent": "KiarashAI/1.0 (kiarash996@yahoo.com)",
+#     "Accept": "application/json",
+# }
+
+def get_env_var(key: str) -> str:
+    value = os.getenv(key)
+    if not value:
+        raise RuntimeError(f"Required environment variable '{key}' is not set")
+    return value
+
+name = get_env_var("YOUR_NAME")
+email = get_env_var("EMAIL_ADDRESS")
 SEC_HEADERS = {
-    "User-Agent": "KiarashAI/1.0 (kiarash996@yahoo.com)",
-    "Accept": "application/json",
+        "User-Agent" : f"{name} ({email})",
+        "Accept": "application/json",
 }
 
 # Local file path (recommended)

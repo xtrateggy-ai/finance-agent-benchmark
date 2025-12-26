@@ -13,15 +13,17 @@ import sys
 import re
 import asyncio
 from typing import Optional, Dict
+from tools.company_CIK import get_env_var
 
 
 # -----------------------
 # SEC-Compliant Headers
 # -----------------------
+name = get_env_var("YOUR_NAME")
+email = get_env_var("EMAIL_ADDRESS")
 SEC_HEADERS = {
-    "User-Agent": "KiarashAI/1.0 (kiarash996@yahoo.com)",  # update for production
-    "Accept": "application/json",
-    "Content-Type": "application/json",
+        "User-Agent" : f"{name} ({email})",
+        "Accept": "application/json",
 }
 
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik10}.json"

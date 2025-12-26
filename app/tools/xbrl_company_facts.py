@@ -9,11 +9,14 @@ import sys
 import asyncio
 from typing import Dict
 from tools.edgar_submissions import normalize_cik_to_10
+from tools.company_CIK import get_env_var
 
 # --- SEC-Compliant Headers ---
+name = get_env_var("YOUR_NAME")
+email = get_env_var("EMAIL_ADDRESS")
 SEC_HEADERS = {
-    "User-Agent": "KiarashAI/1.0 (kiarash996@yahoo.com)",
-    "Accept": "application/json",
+        "User-Agent" : f"{name} ({email})",
+        "Accept": "application/json",
 }
 
 BASE_URL = "https://data.sec.gov/api/xbrl/companyfacts"

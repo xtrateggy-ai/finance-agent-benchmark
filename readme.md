@@ -17,6 +17,8 @@ This project enhances the original [Vals.ai Finance-Agent-Benchmark](https://www
 
 ## Architecture
 
+<img width="1406" height="806" alt="Screenshot From 2025-12-31 11-01-52" src="https://github.com/user-attachments/assets/be40d239-8f6b-417d-8c02-e551be7aa346" />
+
 ```
 AgentBeats Platform
  │
@@ -111,13 +113,31 @@ Both agents expose `.well-known/agent-card.json` endpoints describing:
 ## Installation
 
 ### Prerequisites
-- Python 3.12+
-- Docker (optional, for containerized deployment)
+- Python 3.13+
+- Local LLM
+- env file based on the env template
+- setup required env variables:
+   - `YourName`
+   - `Email_ADDRESS`
+   - `LLM_MODEL`
+   - `LLM_API_KEY`
 - API Keys:
   - `LLM_API_KEY` (Gemini/OpenAI/Anthropic)
-  - `SERP_API_KEY` (optional, for web search)
-  - `SEC_API_KEY` (optional, for EDGAR search)
-
+    
+### Other Setup
+  ### LOCAL LLM & RAG
+     USE_LOCAL_LLM_WHITE=0    # 1=True 0=False - White agent tool decisions (NEW)
+     USE_LOCAL_LLM_JUDGE=0    # 1=True 0=False - Answer evaluation (NEW)
+     USE_LOCAL_LLM_RAG=1      # 1=True 0=False - Choose between local LLM+RAG and Regex() extraction
+     USE_LOCAL_LLM_GPU=1      # 1=True 0=False - Set use GPU for the local LLM, if available in the machine
+     MAX_FILINGS_PER_QUESTION=125  # Max number of filings to process per question.
+     LOCAL_LLM_MODEL_PATH=models/qwen2.5-3b-instruct-q4_k_m.gguf
+     #LOCAL_LLM_MODEL_PATH=models/llama-3.2-3b-instruct-q4_k_m.gguf  # NOTE: this is 3B (not 1B) parameers
+     LOCAL_LLM_JUDGE_MODEL=models/llama-3.2-1b-instruct-q4_k_m.gguf
+     
+     LOCAL_LLM_WHITE_CONTEXT=6144   # White agent (needs more for tool descriptions)
+     LOCAL_LLM_JUDGE_CONTEXT=2048   # Judge (just comparing two strings)
+     LOCAL_LLM_RAG_CONTEXT=4096     # RAG extraction
 ### Local Setup
 
 ```bash
@@ -126,15 +146,15 @@ git clone https://github.com/your-username/finance-agent-benchmark.git
 cd finance-agent-benchmark
 
 # Create virtual environment
-python -m venv fab
-source fab/bin/activate  # On Windows: fab\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Configure secrets
 cp secrets/secrets.env.example secrets/secrets.env
-# Edit secrets/secrets.env with your API keys
+# Edit secrets/secrets.env with your API keys and setup
 ```
 
 ### Configuration
@@ -165,7 +185,7 @@ SEC_API_KEY=your_sec_api_key
 
 ## Usage
 
-### Local Development
+### Manually
 
 ```bash
 # Terminal 1: Start Green Agent
@@ -194,50 +214,6 @@ python launcher.py --num_tasks 5
 #   --green_port PORT   Green agent port (default: 9000)
 #   --white_host HOST   White agent host (default: 127.0.0.1)
 #   --white_port PORT   White agent port (default: 8000)
-```
-
-### Docker Deployment
-
-```bash
-# Build image
-docker build -t finance-agent-benchmark .
-
-# Run single container (both agents)
-docker run --rm \
-  -p 9000:9000 -p 9001:9001 -p 8000:8000 \
-  -e LLM_API_KEY=your_key \
-  -e NUM_TASKS=5 \
-  finance-agent-benchmark
-
-# Or use environment file
-docker run --rm \
-  -p 9000:9000 -p 9001:9001 -p 8000:8000 \
-  --env-file secrets/secrets.env \
-  finance-agent-benchmark
-
-# View logs
-docker logs -f finance-agent-benchmark
-```
-
-### Testing Endpoints
-
-```bash
-# Green Agent
-curl http://localhost:9000/health
-curl http://localhost:9000/card
-curl http://localhost:9001/sse  # MCP endpoint
-
-# White Agent
-curl http://localhost:8000/health
-curl http://localhost:8000/card
-
-# Test question via A2A
-curl -X POST http://localhost:8000/a2a \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "What is revenue?",
-    "mcp_url": "http://localhost:9001"
-  }'
 ```
 
 ## Project Structure

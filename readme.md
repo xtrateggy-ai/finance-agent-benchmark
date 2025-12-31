@@ -289,7 +289,7 @@ finance-agent-benchmark
 
 ## Evaluation Metrics
 
-Match the answers rubrics that is on the dataset semantically. These rubrics are different based on each question category and steps to answer a particular question.
+Match the answers rubrics that is on the dataset semantically. These rubrics are different based on each question's category and a series of steps to answer a particular question.
 
 ## References
 

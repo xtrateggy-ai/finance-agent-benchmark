@@ -633,24 +633,6 @@ class GreenAgent:
                 return {"error": str(e)}
 
         # --------------------------
-        # Google Web Search Tool
-        # --------------------------
-        #@self.mcp_server.tool()
-        #async def google_search_handler(query: str, verbose: bool = False) -> dict:
-        #    """
-        #    MCP/LLM handler for Google Custom Search API.
-        #    Performs a web search and returns top 5 results snippets.
-        #    """
-        #    if verbose:
-        #        print(f"[GOOGLE_SEARCH] Query received: {query}", file=sys.stderr)
-        #
-        #    try:
-        #        return await google_search(query=query, verbose=verbose)
-        #    except Exception as e:
-        #        return {"error": str(e)}
-
-
-        # --------------------------
         # Yfinance search Tool
         # --------------------------        
         # ------------------------------------------------------------
@@ -906,49 +888,6 @@ class GreenAgent:
         # ------------------------------------------------------------------
         # Get Today's Date
         # ------------------------------------------------------------------
-        # @self.mcp_server.tool()
-        # async def get_today_date_handler(
-        #     date_format: str = "iso",
-        #     timezone: str = "UTC"
-        # ) -> dict:
-        #     """
-        #     CRITICAL TOOL: Returns today's real-world date.
-            
-        #     Use this tool IMMEDIATELY at the start of any task involving dates, fiscal years,
-        #     filing deadlines, or "as of today" comparisons.
-            
-        
-        #     Why you MUST know the current date:
-        #     • There are questions in the database related to financial metrics and you must know if you need Q4 FY of the current year. 
-        #     • Dataset questions are from real 10-K, 10-Q, 8-K, etc. filings 
-        #     • You are running in November 2025 (or later)
-        #     • Without this tool, you will hallucinate the current year and fail questions like:
-        #         - "What is the most recent fiscal year reported?" → 2024, not 2025
-        #         - "Has the 2024 10-K been filed?" → Yes (filed early 2025)
-        #         - "What was revenue in FY2023 vs FY2024?" → needs to know 2024 is complete
-        
-        #     Always call this first if the question mentions:
-        #     "latest", "most recent", "current", "as of", "fiscal year ended", etc.
-            
-        #     Returns today's date in various formats.
-            
-        #     Args:
-        #         format (str): 
-        #             "iso"      → 2025-11-23
-        #             "full"     → Sunday, November 23, 2025
-        #             "ymd"      → 20251123
-        #             "mdy"      → 11/23/2025
-        #             "timestamp"→ 2025-11-23T14:30:22.123456+00:00
-        #         timezone (str): IANA timezone, e.g. "America/New_York", "Europe/London", "UTC"
-            
-        #     Returns:
-        #         dict with all formats + metadata
-        #     """
-        #     return get_today_date(
-        #         date_format=date_format,
-        #         timezone=timezone
-        #     )
-
         @self.mcp_server.tool()
         async def get_today_date_handler(
             format: str = "iso",  # ✅ Changed from date_format to format

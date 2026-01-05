@@ -24,6 +24,91 @@ SEC_HEADERS = {
         "Accept": "application/json",
 }
 
+def clean_company_name(name: str) -> str:
+    """Normalize company name for matching"""
+    s = name.upper()
+    s = re.sub(r"\b(CORPORATION|CORP|INC|LLC|LLP|LTD|LIMITED|CO|COMPANY|PLC|AG|SA)\b\.?", "", s)
+    s = re.sub(r"[.,&''\-—–/\\()]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"^THE\s+", "", s)
+    s = re.sub(r"\s+THE$", "", s)
+    return s.lower().strip()
+
+# -------lookup in archive files for company cik---------
+async def get_cik_from_archive(company_name: str,
+                               use_disk_cache: bool = False,
+                               cache_filename: str = None
+                               ) -> Optional[str]:
+    """Fallback: search SEC's archive"""
+    search_lower = clean_company_name(company_name.strip())
+
+    print(f"[SEC] Looking up CIK for: {company_name}")
+    
+    file_loaded=False
+    data = ""
+    try:
+        # Disk cache check
+        if use_disk_cache and cache_filename:
+            cache_dir = Path("data/sec")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file = cache_dir / cache_filename
+
+            if cache_file.exists():
+                try:
+                    data = cache_file.read_text(encoding='utf-8')
+                    print(f"[CACHE] get_cik_from_archive(): Read from disk: {cache_filename}", flush=True)
+                    file_loaded=True
+                    
+                except Exception as e:
+                    print(f"[CACHE] get_cik_from_archive(): Failed to read {cache_filename}: {e}")
+                    return ""
+        
+        # If file is not loaded, use SEC Website
+        if file_loaded == False:
+                       
+            async with aiohttp.ClientSession() as session:
+                print("[SEC_SEARCH] Starting download of cik-lookup-data.txt (~20MB)...")
+                async with session.get(
+                    "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt",
+                    headers=SEC_HEADERS,
+                    timeout=aiohttp.ClientTimeout(total=120)
+                ) as resp:
+                    if resp.status != 200:
+                        return None
+    
+                    content = b""
+                    async for chunk in resp.content.iter_chunked(1024 * 1024):
+                        if chunk:
+                            content += chunk
+    
+                    data = content.decode('utf-8', errors='ignore')
+                    print(f"[SEC] FULL FILE DOWNLOADED: {len(data):,} characters")
+                    
+                    # Save to disk, if flag is True
+                    if use_disk_cache and cache_filename:
+                        try:
+                            cache_file.write_text(data, encoding="utf-8")
+                            print(f"[SEC] get_cik_from_archive(): Saved to disk: {cache_filename}")
+                        except Exception as e:
+                            print(f"[SEC] get_cik_from_archive(): Save error: {e}")
+        
+        # Look for CIK number
+        for line in data.splitlines():
+            if ':' not in line:
+                continue
+            
+            name_part, cik_part = line.split(":", 1)
+            cik = cik_part.strip().zfill(10).split(":", 1)[0]
+            clean_name = clean_company_name(name_part)
+            
+            if cik != "0000000000" and clean_name == search_lower:
+                return cik
+
+        return None
+
+    except Exception:
+        return None
+
 # Local file path (recommended)
 COMPANY_TICKER_FILE = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "company_tickers.json")
@@ -97,6 +182,9 @@ async def resolve_cik(company_name: str = None, ticker_symbol: str = None) -> Tu
     # Check exact name match
     if clean_name_query in name_to_cik:
         return name_to_cik[clean_name_query], ticker_upper or None
+    
+    # lookup in archive
+    return get_cik_from_archive()  
 
     # Fuzzy name match
     best_match = difflib.get_close_matches(clean_name_query, name_to_cik.keys(), n=1, cutoff=0.55)

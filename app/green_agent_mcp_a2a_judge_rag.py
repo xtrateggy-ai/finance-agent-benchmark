@@ -46,8 +46,13 @@ class GreenAgent:
     """
 
     def __init__(self):
-        self.agent_host = os.getenv("GREEN_AGENT_HOST", "0.0.0.0")
-        self.agent_port = int(os.getenv("GREEN_AGENT_PORT", 9000))
+        self.debug = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
+        if self.debug:
+            self.agent_host = os.getenv("GREEN_AGENT_HOST", "127.0.0.1")
+            self.agent_port = int(os.getenv("GREEN_AGENT_PORT", 9000))
+        else:
+            self.agent_host = os.getenv("HOST", "0.0.0.0")
+            self.agent_port = int(os.getenv("AGENT_PORT", 9000))
         self.mcp_port = int(os.getenv("MCP_PORT", 9001))
         self.name = "finance-green-agent"
         self.verbose = bool(int(os.getenv("VERBOSE", 1))) # 1=True 0=False 

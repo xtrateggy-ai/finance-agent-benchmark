@@ -87,18 +87,25 @@ async def async_main():
     # Reload env if custom path
     if args.env != secret_env:
         print(f"[LAUNCHER] Reading {args.env} file.", file=sys.stderr)
-        ret = load_dotenv(args.env, override=True)
+        ret = load_dotenv(args.env, override=False)
         
         if not ret and not find_dotenv(args.env):
             raise Exception(f"[LAUNCHER] Errno 2: File [{args.env}] not found.")
 
     # ---- Configuration ----
-    GREEN_HOST = os.getenv("GREEN_AGENT_HOST", "127.0.0.1")
-    GREEN_PORT = int(os.getenv("GREEN_AGENT_PORT", 9000))
+    Debug = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
+    if Debug:
+        GREEN_HOST = os.getenv("GREEN_AGENT_HOST", "127.0.0.1")
+        GREEN_PORT = int(os.getenv("GREEN_AGENT_PORT", 9000))
+
+        
+    else:
+        GREEN_HOST = os.getenv("HOST", "0.0.0.0")
+        GREEN_PORT = int(os.getenv("AGENT_PORT", 9000))
+        
     WHITE_HOST = os.getenv("WHITE_AGENT_HOST", "127.0.0.1")
     WHITE_PORT = int(os.getenv("WHITE_AGENT_PORT", 8000))
     NUM_TASKS  = args.num_tasks if args.num_tasks else int(os.getenv("NUM_TASKS", 5))
-    
     green_url = f"http://{GREEN_HOST}:{GREEN_PORT}"
     white_url = f"http://{WHITE_HOST}:{WHITE_PORT}"
     

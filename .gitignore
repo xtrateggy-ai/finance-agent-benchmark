@@ -69,3 +69,6 @@ desktop.ini
 .pytest_cache/
 .coverage
 htmlcov/
+
+#agentbeats
+.ab

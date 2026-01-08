@@ -183,9 +183,6 @@ async def resolve_cik(company_name: str = None, ticker_symbol: str = None) -> Tu
     if clean_name_query in name_to_cik:
         return name_to_cik[clean_name_query], ticker_upper or None
     
-    # lookup in archive
-    return get_cik_from_archive()  
-
     # Fuzzy name match
     best_match = difflib.get_close_matches(clean_name_query, name_to_cik.keys(), n=1, cutoff=0.55)
     if best_match:

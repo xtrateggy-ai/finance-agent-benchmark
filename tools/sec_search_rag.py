@@ -50,7 +50,7 @@ def _filter_by_date(
 # ============================================================
 # CIK LOOKUP
 # ============================================================
-
+# to do >>> it should also fetch cik by tickers -> bug with US Steel
 async def get_cik_from_ticker_or_name(
     company_name: str = None,
     ticker_symbol: str = None,

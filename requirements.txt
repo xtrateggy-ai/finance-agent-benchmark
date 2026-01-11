@@ -46,7 +46,7 @@ durationpy==0.10
 earthshaker==0.2.1
 email-validator==2.3.0
 exceptiongroup==1.3.1
-faiss-cpu==1.13.0
+# faiss-cpu==1.13.0
 fastapi==0.123.0
 fastapi-cli==0.0.20
 fastapi-cloud-cli==0.8.0
@@ -70,8 +70,8 @@ googleapis-common-protos==1.72.0
 greenlet==3.2.4
 griffe==1.15.0
 grpc-google-iam-v1==0.14.3
-grpcio>=1.62.3,<1.68.0
-grpcio-status==1.76.0
+# grpcio>=1.62.3,<1.68.0
+# grpcio-status==1.76.0
 h11==0.16.0
 h2==4.3.0
 hf-xet==1.2.0

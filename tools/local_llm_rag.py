@@ -51,7 +51,7 @@ class QuestionAnsweringExtractor:
         #model_path: str = "models/qwen2.5-7b-instruct-q5_k_m.gguf",
         #model_path: str = "models/llama-3.2-3b-instruct-q5_k_m.gguf",
         model_path: str = "models/llama-3.2-1b-instruct-q4_k_m.gguf",
-        use_local_llm_gpu: bool = True
+        use_local_llm_gpu: bool = False
     ):
         print("[INIT] Loading local LLM...")
         

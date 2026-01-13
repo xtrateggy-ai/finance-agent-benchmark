@@ -200,38 +200,38 @@ class WhiteAgent:
         self.memory = ConversationMemory(max_history=10)
         
         # Logging
-        self.log_file = self.start_new_log()
+        # self.log_file = self.start_new_log()
         
         # Create FastAPI app
         self.app = FastAPI(title="Finance White Agent")
         self._setup_routes()
 
 
-    def start_new_log(self) -> str:
-        """Create fresh log file"""
-        self.log_file = "eval_white.txt"
-        Path(self.log_file).parent.mkdir(parents=True, exist_ok=True)
-        with open(self.log_file, 'w', encoding='utf-8') as f:
-            f.write('')
-        print(f"[WHITE] New evaluation log: {self.log_file}")
-        return self.log_file
+    # def start_new_log(self) -> str:
+    #     """Create fresh log file"""
+    #     self.log_file = "eval_white.txt"
+    #     Path(self.log_file).parent.mkdir(parents=True, exist_ok=True)
+    #     with open(self.log_file, 'w', encoding='utf-8') as f:
+    #         f.write('')
+    #     print(f"[WHITE] New evaluation log: {self.log_file}")
+    #     return self.log_file
 
-    def log_result(self, result: Dict[str, Any]):
-        """Append result to log"""
-        if self.log_file is None:
-            raise RuntimeError("Log file not initialized")
-        line = json.dumps(result, ensure_ascii=False, default=str)
-        with open(self.log_file, 'a', encoding='utf-8') as f:
-            f.write(line + '\n')
+    # def log_result(self, result: Dict[str, Any]):
+    #     """Append result to log"""
+    #     if self.log_file is None:
+    #         raise RuntimeError("Log file not initialized")
+    #     line = json.dumps(result, ensure_ascii=False, default=str)
+    #     with open(self.log_file, 'a', encoding='utf-8') as f:
+    #         f.write(line + '\n')
 
-    def log_separator(self, text: str = ""):
-        """Add visual separator"""
-        separator = "=" * 80
-        self.log_result({
-            "separator": separator,
-            "text": text,
-            "timestamp": datetime.now().isoformat()
-        })
+    # def log_separator(self, text: str = ""):
+    #     """Add visual separator"""
+    #     separator = "=" * 80
+    #     self.log_result({
+    #         "separator": separator,
+    #         "text": text,
+    #         "timestamp": datetime.now().isoformat()
+    #     })
 
     def _setup_routes(self):
         """Setup A2A protocol endpoints"""
@@ -396,8 +396,8 @@ class WhiteAgent:
                                 decision = json.loads(response_text)
                                 
                                 # Log decision
-                                self.log_result(decision)
-                                self.log_separator()
+                                # self.log_result(decision)
+                                # self.log_separator()
                                 
                             except json.JSONDecodeError as e:
                                 print(f"[WHITE] JSON parse error: {e}", file=sys.stderr)

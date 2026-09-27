@@ -26,7 +26,7 @@ class LLMJudge:
         self.llm_api_key = api_key or os.getenv("LLM_API_KEY")
         
         # Check if we should use local LLM: 1=True 0=False
-        self.llm_use_local = bool(int(os.getenv("USE_LOCAL_LLM_JUDGE", "1")))
+        self.llm_use_local = bool(int(os.getenv("USE_LOCAL_LLM_JUDGE", "0")))
 
     async def evaluate(
         self,

@@ -1,8 +1,10 @@
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    XDG_CACHE_HOME=/app/cache
 
+# System dependencies (needed by many AI libs)
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -13,15 +15,19 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# Install python dependencies first (better caching)
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-COPY . .
+# Copy source code
+COPY src/ ./src/
+COPY utils/ ./utils/
+COPY tools/ ./tools/
+# Copy dataset into image
+COPY data/ ./data/
 
-RUN chmod +x run.sh run_launcher.sh kill_agentbeats.sh
+# Create runtime directories
+RUN mkdir -p /app/cache
 
-RUN useradd -m appuser
-USER appuser
-
-# 🚀 This is the key change
-CMD ["python", "launcher.py"]
+# Default command (same as your local run)
+ENTRYPOINT ["python", "-m", "src.server"]

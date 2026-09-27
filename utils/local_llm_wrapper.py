@@ -26,7 +26,7 @@ class LocalLLMWrapper:
     def __init__(
         self,
         model_path: str = None,
-        use_gpu: bool = True,
+        use_gpu: bool = False,
         n_ctx: int = 8192,
         n_gpu_layers: int = -1,  # -1 = all layers on GPU
         verbose: bool = False

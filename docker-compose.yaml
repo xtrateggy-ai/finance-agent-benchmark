@@ -1,17 +1,31 @@
 version: "3.9"
 
 services:
+
   finance-agent:
     build: .
     image: finance-agent-benchmark:latest
-    env_file:
-      - secrets/secrets.env
-    environment:
-      HOST: 0.0.0.0
-      AGENT_PORT: 9000
-      DEBUG: "false"
+    container_name: finance-agent-benchmark
+
     ports:
-      - "9000:9000"
-      - "9001:9001"
-      - "8000:8000"
+      - "9009:9009"
+
+    env_file:
+      - ./secrets/secrets.env
+
+    environment:
+      GREEN_AGENT_HOST: "0.0.0.0"
+      GREEN_AGENT_PORT: "9009"
+      DATASET: "/app/data/public.csv"
+
+    volumes:
+      # dataset
+      # - ./data:/app/data:ro
+
+      # # models (LLM GGUF)
+      # - ./tools/models:/app/tools/models:ro
+
+      # runtime cache
+      - ./cache:/app/cache
+
     restart: unless-stopped

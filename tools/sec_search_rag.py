@@ -143,7 +143,8 @@ async def fetch_filing_and_exhibit_html(
     exhibit_text = None
     
     if use_disk_cache and cache_filename:
-        cache_dir = Path("data/sec")
+        cache_dir = Path(os.getenv("XDG_CACHE_HOME", "/app/cache")) / "sec"
+
         cache_dir.mkdir(parents=True, exist_ok=True)
         
         filing_cache = cache_dir / cache_filename
@@ -1559,7 +1560,7 @@ async def sec_search_rag(
     max_filings: int = 50,      # Max number of filings to process.
     use_disk_cache: bool = True, 
     use_local_llm_rag: bool = True, 
-    use_local_llm_gpu: bool = True
+    use_local_llm_gpu: bool = False
     #num_results: int = 100,
 ) -> dict:
     """
@@ -1843,8 +1844,10 @@ async def sec_search_rag(
         # Initialize LLM Extractor (NEW!)
         llm_extractor = None
         
-        model_path = os.getenv("LOCAL_LLM_MODEL_PATH",
-                               "models/llama-3.2-1b-instruct-q4_k_m.gguf")
+        model_path = os.getenv("LOCAL_LLM_MODEL_PATH")
+        if not model_path:
+            raise RuntimeError("LOCAL_LLM_MODEL_PATH is not set")
+
 
         try:
             print("[SEC] Initializing LLM/RAG extractor...", file=sys.stderr)

@@ -13,9 +13,11 @@ This project enhances the original [Vals.ai Finance-Agent-Benchmark](https://www
 
 - **A2A Protocol**: Agent-to-agent communication
 - **MCP (Model Context Protocol)**: Dynamic tool discovery and execution
-- **Green/White Agent Architecture**: Evaluator and executor pattern
+- **Green/Purple Agent Architecture**: Evaluator and executor pattern
 
 ## Architecture
+
+White agent is same as Purple agent
 
 <img width="1406" height="806" alt="Screenshot From 2025-12-31 11-01-52" src="https://github.com/user-attachments/assets/be40d239-8f6b-417d-8c02-e551be7aa346" />
 
@@ -71,7 +73,7 @@ some APIs resource: https://www.sec.gov/search-filings/edgar-application-program
 
 ## AgentBeats Integration
 
-Based on the [AgentBeats Blog Series](https://docs.google.com/document/d/your-doc-id), this implementation follows the **Green/White Agent Pattern**:
+Based on the [AgentBeats Blog Series](https://docs.google.com/document/d/your-doc-id), this implementation follows the **Green/Purple Agent Pattern**:
 
 ### Green Agent (Evaluator)
 - **Role**: Receives instructions from AgentBeats, orchestrates assessment
@@ -82,7 +84,7 @@ Based on the [AgentBeats Blog Series](https://docs.google.com/document/d/your-do
   - `POST /reset` - Reset agent state
 - **MCP Server**: Exposes tools at `http://green:9001/sse`
 
-### White Agent (Executor)
+### Purple Agent (Executor)
 - **Role**: LLM-powered reasoner that discovers and uses tools
 - **Process**:
   1. Receives question from Green Agent via A2A
@@ -94,6 +96,8 @@ Based on the [AgentBeats Blog Series](https://docs.google.com/document/d/your-do
   - Conversation memory for multi-turn reasoning
   - Dynamic tool discovery (no hardcoded tools)
   - Iterative refinement with fallback strategies
+
+  This is implemented on the purple agent repository
 
 ### Agent Cards
 

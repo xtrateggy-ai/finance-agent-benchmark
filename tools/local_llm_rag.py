@@ -50,11 +50,22 @@ class QuestionAnsweringExtractor:
         self, 
         #model_path: str = "models/qwen2.5-7b-instruct-q5_k_m.gguf",
         #model_path: str = "models/llama-3.2-3b-instruct-q5_k_m.gguf",
-        model_path: str = "models/llama-3.2-1b-instruct-q4_k_m.gguf",
+        model_path: str | None = None,
         use_local_llm_gpu: bool = False
     ):
         print("[INIT] Loading local LLM...")
-        
+            # Resolve model path (ENV > argument > default)
+        model_path = (
+            os.getenv("LOCAL_LLM_MODEL_PATH")
+            or model_path
+            or "models/llama-3.2-1b-instruct-q4_k_m.gguf"
+        )
+
+        # Optional safety check
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(
+                f"Local LLM model not found at: {model_path}"
+            )
         # Initialize LLM
         self.llm = LlamaCPP(
             model_path=model_path,

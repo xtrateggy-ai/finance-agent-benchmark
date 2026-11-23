@@ -9,7 +9,7 @@ import sys  # ← ADDED THIS IMPORT
 import litellm
 from typing import Dict, Any
 from utils.llm_manager import safe_llm_call
-from utils.local_llm_wrapper import safe_local_llm_call 
+# from utils.local_llm_wrapper import safe_local_llm_call 
 
 class LLMJudge:
     """
@@ -96,21 +96,21 @@ class LLMJudge:
     }}"""
 
         try:
-            if self.llm_use_local:
-                response = await safe_local_llm_call(
-                    messages=[{"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"},
-                    temperature=0.1,
-                    component="judge" 
-                )
-            else:
-                response = await safe_llm_call(
-                    model=self.llm_model,
-                    messages=[{"role": "user", "content": prompt}],
-                    api_key=self.llm_api_key,
-                    response_format={"type": "json_object"},
-                    temperature=0.1
-                )
+            # if self.llm_use_local:
+            #     response = await safe_local_llm_call(
+            #         messages=[{"role": "user", "content": prompt}],
+            #         response_format={"type": "json_object"},
+            #         temperature=0.1,
+            #         component="judge" 
+            #     )
+            # else:
+            response = await safe_llm_call(
+                model=self.llm_model,
+                messages=[{"role": "user", "content": prompt}],
+                api_key=self.llm_api_key,
+                response_format={"type": "json_object"},
+                temperature=0.1
+            )
             
             # ✅ CHECK: Is this an error dict or real response?
             if isinstance(response, dict) and "error" in response:

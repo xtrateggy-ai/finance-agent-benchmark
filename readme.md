@@ -1,330 +1,310 @@
 # Finance-Agent-Benchmark Enhancement
 
-> **Berkeley Agentic AI Class Assignment**  
-> Enhancing Vals.ai's Finance-Agent-Benchmark with AgentBeats integration
+> **UC Berkeley Agentic AI / AgentBeats Project**  
+> Extending Vals.ai's Finance-Agent-Benchmark into an A2A-based, MCP-enabled financial agent evaluation system.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
 
 ## Overview
 
-This project enhances the original [Vals.ai Finance-Agent-Benchmark](https://www.vals.ai/benchmarks/finance_agent) by integrating it with Berkeley's [AgentBeats](https://github.com/agentbeats) framework. The enhancement—referred to as "agentification"—transforms the original single-agent benchmark into a multi-agent system using:
+This project adapts the original [Vals.ai Finance-Agent-Benchmark](https://www.vals.ai/benchmarks/finance_agent) for the [AgentBeats](https://github.com/agentbeats) evaluation ecosystem. It separates **benchmark orchestration and scoring (Green Agent)** from **financial question answering (Purple Agent)**, allowing different participants to be assessed against a shared dataset and a common set of financial tools.
 
-- **A2A Protocol**: Agent-to-agent communication
-- **MCP (Model Context Protocol)**: Dynamic tool discovery and execution
-- **Green/Purple Agent Architecture**: Evaluator and executor pattern
+- **A2A (Agent-to-Agent) protocol:** Transports assessment requests and answers between independent agents.
+- **MCP (Model Context Protocol):** Exposes SEC and financial-analysis tools for discovery and invocation by the participant.
+- **Green/Purple architecture:** Keeps evaluation logic independent of the participant's implementation.
+- **AgentBeats results:** Produces assessment metrics that can be published through the AgentBeats leaderboard workflow.
 
 ## Architecture
 
-White agent is same as Purple agent
+The **Green Agent** owns the benchmark questions, tool server, orchestration, and evaluation. The **Purple Agent** (previously called the *White Agent* in older versions) owns reasoning, tool selection, and answer generation. The Purple Agent may be implemented separately and does not need to share the Green Agent's codebase.
 
-<img width="1406" height="806" alt="Screenshot From 2025-12-31 11-01-52" src="https://github.com/user-attachments/assets/be40d239-8f6b-417d-8c02-e551be7aa346" />
+```text
+AgentBeats / assessment client
+        |
+        | A2A: run_assessment(white_address, num_tasks)
+        v
+Green Agent — A2A server (port 9009)
+  |  /.well-known/agent-card.json   /health   /a2a
+  |
+  +-- server.py       A2A request handling and service wiring
+  +-- agent.py        Assessment entry point / coordination
+  +-- executer.py     Dataset iteration, task execution, result aggregation
+  +-- messenger.py    A2A requests to the participating Purple Agent
+  +-- llm_judge.py    Answer evaluation and scoring
+  |
+  +-- MCP server (port 9001; transport endpoint depends on configuration)
+          |
+          +-- SEC EDGAR / XBRL APIs
+          +-- SEC filing search and retrieval (RAG)
+          +-- Financial metrics, ratios, and helper tools
 
+                  A2A question + MCP endpoint
+Green Agent ------------------------------------------> Purple Agent
+Green Agent <------------------------------------------ Purple Agent
+                       A2A answer                         |
+                                                          | MCP tools/list,
+                                                          | tools/call
+                                                          v
+                                                Green Agent MCP server
+
+Green Agent -> judge -> structured assessment results -> AgentBeats leaderboard
 ```
-AgentBeats Platform
- │
- └── Calls Green Agent (A2A) → http://green:9000/a2a
-      │
-      ├── /reset  - Reset agent state
-      ├── /health - Health check
-      └── /a2a    - Assessment tasks
-      
-Launcher
- │
- ├──→ Green Agent (Port 9000)
- │     ├── A2A Server: http://green:9000/a2a
- │     ├── MCP Server: http://green:9001/sse
- │     ├── Orchestrates assessment
- │     └── Exposes tools via MCP
- │
- └──→ White Agent (Port 8000)
-       ├── A2A Server: http://white:8000/a2a
-       ├── MCP Client: Discovers tools from Green
-       ├── LLM Reasoner: Decides which tools to call
-       └── Executes tool calls via MCP
-```
+
+**Evaluation flow:** The assessment client calls the Green Agent. Green loads a benchmark question and sends it to the configured Purple Agent over A2A, along with the MCP endpoint. Purple discovers and invokes tools as needed, then returns an answer over A2A. Green compares the answer with the reference answer using its judge, aggregates the results, and returns structured assessment output. The AgentBeats integration consumes those results for leaderboard reporting.
+
+**Protocol responsibilities:** A2A is for *agent communication*; MCP is for *tool access*. This separation makes it possible to benchmark different Purple Agent implementations without changing the Green Agent's assessment interface.
 
 ## Original Benchmark Resources
 
 ### Vals.ai Finance-Agent-Benchmark
 
-- **Website**: [vals.ai/benchmarks/finance_agent](https://www.vals.ai/benchmarks/finance_agent)
-  - Benchmark overview, design philosophy, and evaluation metrics
-  - Task examples and tool descriptions
-  
-- **GitHub**: [vals-ai/finance-agent](https://github.com/vals-ai/finance-agent)
-  - Source code for `run_agent.py` (main evaluation script)
-  - Implementation of 4 core tools
+- **Website:** [vals.ai/benchmarks/finance_agent](https://www.vals.ai/benchmarks/finance_agent) — original benchmark context and financial tasks.
+- **GitHub:** [vals-ai/finance-agent](https://github.com/vals-ai/finance-agent) — original implementation and tooling reference.
 
 ### Core Tools (Enhanced for MCP)
 
-| Tool | Description | Requirements |
-|------|-------------|--------------|
-| `company CIK resolver` | get company CIK based on the company name | `setup the user and email in env` |
-| `xbrl company facts` | returns all the company concepts data for a company | `setup the user and email in env` |
-| `xbrl company concept` | returns all the XBRL disclosures from a single company (CIK) and concept (a taxonomy and tag) into a single JSON file, with a separate array of facts for each units on measure that the company has chosen to disclose | `setup the user and email in env` |
-| `xbrl frames` | The xbrl/frames API returns the most recent filed fact per entity for a requested time period | `setup the user and email in env` |
-| `sec search rag` | Local Rag that fetch submissions(10-K, 10-Q, 8-K, DEF-14A), embed and save them to answer relative questions | `setup the required env var` |
-| `yfinance` | Helper tool to calculate financial metrics | `setup the required env var` |
-| `get today date` | Helper tool that helps LLMs understand latest data | `setup the required env var` |
+The Green Agent exposes financial tools through MCP. The precise registered tool names and arguments are defined by the running MCP server and can be discovered by a Purple Agent.
 
-some APIs resource: https://www.sec.gov/search-filings/edgar-application-programming-interfaces
+| Tool / capability | Purpose | Requirements |
+|---|---|---|
+| `cik_resolver` | Resolve company identifiers (CIKs) | SEC-compatible user-agent configuration |
+| `companyfacts` | Retrieve company-wide XBRL facts | SEC access |
+| `companyconcept` | Retrieve facts for a particular taxonomy concept | SEC access |
+| `frames` | Retrieve XBRL facts for a reporting period | SEC access |
+| `sec_search_rag` | Search SEC filings such as 10-K, 10-Q, 8-K, and DEF 14A | Filing access and configured retrieval backend |
+| `get_financial_metrics` | Retrieve or compute financial metrics | Underlying financial data |
+| `get_financial_ratios` | Retrieve or compute financial ratios | Underlying financial data |
+| `get_ticker_symbol` / `get_company_name_from_ticker` | Resolve ticker and company names | Company mapping/data source |
+| `today_date` | Supply the current date for time-sensitive tasks | No external API key expected |
+
+SEC API reference: [SEC EDGAR APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces). SEC access requires an appropriate identifying user-agent and respectful request rates.
 
 ## AgentBeats Integration
 
-Based on the [AgentBeats Blog Series](https://docs.google.com/document/d/your-doc-id), this implementation follows the **Green/Purple Agent Pattern**:
+The implementation follows the **Green/Purple Agent pattern**: Green is the evaluator and tool provider; Purple is the participant being evaluated.
 
 ### Green Agent (Evaluator)
-- **Role**: Receives instructions from AgentBeats, orchestrates assessment
-- **Endpoints**:
-  - `GET /card` - Agent card (capabilities, skills)
-  - `POST /a2a` - A2A message handling
-  - `GET /health` - Health check
-  - `POST /reset` - Reset agent state
-- **MCP Server**: Exposes tools at `http://green:9001/sse`
+
+- **Role:** Accept assessment requests, load questions, communicate with the Purple Agent, expose MCP tools, judge answers, and aggregate scores.
+- **A2A endpoints:**
+  - `GET /.well-known/agent-card.json` — agent capabilities and discovery metadata.
+  - `POST /a2a` — A2A JSON-RPC requests.
+  - `GET /health` — health check.
+- **A2A assessment operation:** `run_assessment`, with the participant address (`white_address`, retained as a compatibility argument name) and `num_tasks`.
+- **MCP server:** Separate service on port `9001`; configure the actual transport URL (for example, an SSE endpoint when using SSE transport) for the deployment.
+- **Implementation:** `server.py`, `agent.py`, `executer.py`, `messenger.py`, MCP registration, and the LLM judge.
 
 ### Purple Agent (Executor)
-- **Role**: LLM-powered reasoner that discovers and uses tools
-- **Process**:
-  1. Receives question from Green Agent via A2A
-  2. Discovers available tools via MCP (`tools/list`)
-  3. Uses LLM to decide which tools to call
-  4. Executes tool calls via MCP (`tools/call`)
-  5. Returns answer to Green Agent
-- **Features**:
-  - Conversation memory for multi-turn reasoning
-  - Dynamic tool discovery (no hardcoded tools)
-  - Iterative refinement with fallback strategies
 
-  This is implemented on the purple agent repository
+- **Role:** Answer the financial questions sent by Green. The reference Purple Agent is maintained separately and can be replaced with another compatible participant.
+- **Process:**
+  1. Receive the question and MCP endpoint through A2A.
+  2. Connect to Green's MCP server and discover available tools.
+  3. Select tools and investigate relevant financial data.
+  4. Generate an answer using its own reasoning strategy and model.
+  5. Return the answer to Green over A2A.
+- **Implementation flexibility:** Purple Agents may use different LLMs, prompting strategies, retrieval workflows, or internal memory mechanisms. These are participant choices, not requirements imposed by Green.
+
+Reference Purple image: `ghcr.io/kiarashyavari/finance-purple-agent:latest`.
 
 ### Agent Cards
 
-Both agents expose `.well-known/agent-card.json` endpoints describing:
-- Capabilities (streaming, multimodal support)
-- Skills (financial analysis, web search, document parsing)
-- Input/output modes (text, structured data)
-- Version and metadata
+The agents advertise their A2A identity and supported capabilities through `/.well-known/agent-card.json`. Agent cards describe the service URL, skills, input/output modes, and relevant metadata. Actual capabilities should be read from each running agent's card rather than assumed.
 
 ## Dataset
 
-**Public.csv or Financial-QA-10k**: Question-answer pairs about financial concepts and company data
-- Location: `data/public.csv` (or `data/Financial-QA-10k.csv`) 
-- Format: `question,answer` pairs
-- Evaluation: Exact match accuracy
+- **Default dataset:** `data/public.csv`.
+- **Content:** Financial question/answer records used for assessment.
+- **Alternative datasets:** Can be selected through `DATASET` when compatible with the evaluator's loader.
+- **Evaluation:** Answers are judged against reference answers using an LLM-based evaluator designed to handle semantic and numerical equivalence; task-level outcomes are aggregated into accuracy metrics.
+
+The benchmark dataset and judging logic belong to Green; a Purple Agent receives the question, not the reference answer.
 
 ## Installation
 
 ### Prerequisites
-- Python 3.13+
-- Local LLM
-- env file based on the env template
-- setup required env variables:
-   - `YourName`
-   - `Email_ADDRESS`
-   - `LLM_MODEL`
-   - `LLM_API_KEY`
-- API Keys:
-  - `LLM_API_KEY` (Gemini/OpenAI/Anthropic)
-    
+
+- Python 3.13+ for local development (match the repository's dependency constraints).
+- Docker Engine and Docker Compose for containerized deployment.
+- An LLM provider API key for the configured evaluation model.
+- SEC user-agent identification for EDGAR requests.
+- A reachable A2A-compatible Purple Agent.
+
 ### Other Setup
-  ### LOCAL LLM & RAG
-     USE_LOCAL_LLM_WHITE=0    # 1=True 0=False - White agent tool decisions (NEW)
-     USE_LOCAL_LLM_JUDGE=0    # 1=True 0=False - Answer evaluation (NEW)
-     USE_LOCAL_LLM_RAG=1      # 1=True 0=False - Choose between local LLM+RAG and Regex() extraction
-     USE_LOCAL_LLM_GPU=1      # 1=True 0=False - Set use GPU for the local LLM, if available in the machine
-     MAX_FILINGS_PER_QUESTION=125  # Max number of filings to process per question.
-     LOCAL_LLM_MODEL_PATH=models/qwen2.5-3b-instruct-q4_k_m.gguf
-     #LOCAL_LLM_MODEL_PATH=models/llama-3.2-3b-instruct-q4_k_m.gguf  # NOTE: this is 3B (not 1B) parameers
-     LOCAL_LLM_JUDGE_MODEL=models/llama-3.2-1b-instruct-q4_k_m.gguf
-     
-     LOCAL_LLM_WHITE_CONTEXT=6144   # White agent (needs more for tool descriptions)
-     LOCAL_LLM_JUDGE_CONTEXT=2048   # Judge (just comparing two strings)
-     LOCAL_LLM_RAG_CONTEXT=4096     # RAG extraction
+
+#### LLM, RAG, and cache settings
+
+```dotenv
+LLM_MODEL=gemini/gemini-2.5-flash-lite
+LLM_API_KEY=your_llm_api_key
+USE_LOCAL_LLM_RAG=1
+USE_LOCAL_LLM_GPU=0
+USE_DISK_CACHE=1
+MAX_FILINGS_PER_QUESTION=50
+```
+
+The `USE_LOCAL_LLM_RAG` and GPU settings apply to the configured retrieval implementation, not to the Purple Agent's choice of LLM. Local model files are **not** a mandatory prerequisite for the Green Agent's LLM judge. Configure the SEC identity variables according to the current environment template.
+
 ### Local Setup
 
 ```bash
-# Clone repository
-git clone https://github.com/your-username/finance-agent-benchmark.git
+git clone https://github.com/KiarashYavari/finance-agent-benchmark.git
 cd finance-agent-benchmark
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  
-
-# Install dependencies
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# Configure secrets
-cp secrets/secrets.env.example secrets/secrets.env
-# Edit secrets/secrets.env with your API keys and setup
 ```
+
+Create the environment file expected by your current launcher or Compose configuration, using the repository's example environment file where provided. Do not commit API keys or private `.env` files.
 
 ### Configuration
 
-Edit `secrets/secrets.env`:
+Representative Green Agent settings (confirm exact names in your current environment template):
 
-```bash
-# LLM Configuration
-LLM_MODEL=gemini/gemini-2.5-flash-lite
-LLM_API_KEY=your_api_key_here
-
-# Agent Configuration
-GREEN_AGENT_HOST=127.0.0.1
-GREEN_AGENT_PORT=9000
-WHITE_AGENT_HOST=127.0.0.1
-WHITE_AGENT_PORT=8000
+```dotenv
+HOST=0.0.0.0
+AGENT_PORT=9009
 MCP_PORT=9001
-
-# Dataset
 DATASET=data/public.csv
-#DATASET=data/Financial-QA-10k.csv
-NUM_TASKS=5
-
-# Optional: Tool API Keys
-SERP_API_KEY=your_serpapi_key
-SEC_API_KEY=your_sec_api_key
+LLM_MODEL=gemini/gemini-2.5-flash-lite
+LLM_API_KEY=your_llm_api_key
+USE_DISK_CACHE=1
+USE_LOCAL_LLM_RAG=1
+USE_LOCAL_LLM_GPU=0
+MAX_FILINGS_PER_QUESTION=50
 ```
+
+The Purple Agent must be configured with the Green Agent's **reachable** MCP URL. Inside Docker Compose, service names may be used; from outside Docker, use a host-accessible address. `localhost` inside one container does not refer to another container.
 
 ## Usage
 
 ### Manually
 
+Start the Green service with the repository's current entry point:
+
 ```bash
-# Terminal 1: Start Green Agent
-cd app
-python green_agent_mcp_a2a.py
-
-# Terminal 2: Start White Agent
-cd app
-python white_agent_mcp_memory.py
-
-# Terminal 3: Run Assessment
-cd app
-python launcher.py --num_tasks 5
+python launcher.py
 ```
+
+Start an A2A-compatible Purple Agent separately, then invoke the Green Agent's `run_assessment` operation with its A2A address and the desired task count. The precise client command depends on the installed A2A/AgentBeats client version; the old `green_agent_mcp_a2a.py` and `white_agent_mcp_memory.py` commands are no longer the recommended entry points.
 
 ### Using Launcher (Recommended)
 
-```bash
-# Start both agents and run assessment
-cd app
-python launcher.py --num_tasks 5
+For the published Green Agent container:
 
-# Options:
-#   --num_tasks N       Number of questions to evaluate
-#   --green_host HOST   Green agent host (default: 127.0.0.1)
-#   --green_port PORT   Green agent port (default: 9000)
-#   --white_host HOST   White agent host (default: 127.0.0.1)
-#   --white_port PORT   White agent port (default: 8000)
+```text
+ghcr.io/kiarashyavari/finance-agent-benchmark:latest
 ```
+
+For the reference Purple Agent container:
+
+```text
+ghcr.io/kiarashyavari/finance-purple-agent:latest
+```
+
+Use the repository's AgentBeats scenario/Compose configuration to start the services, provide environment variables, and execute the assessment. The Green A2A service uses port `9009` and its MCP service uses port `9001` in the current architecture. Confirm the exact Compose command and image tags in the checked-in deployment files before running.
+
+Benchmark page: [AgentBeats Finance Agent Benchmark](https://agentbeats.dev/KiarashYavari/finance-agent-benchmark).
 
 ## Project Structure
 
-```
-finance-agent-benchmark
-├── app
-│   ├── cards
-│   │   ├── green_card.toml
-│   │   └── white_card.toml
-│   ├── data
-│   │   ├── public.csv  
-│   ├── eval_result.csv
-│   ├── eval_white.txt
-│   ├── green_agent_mcp_a2a_judge_rag.py
-│   ├── kill_agentbeats.sh
-│   ├── launcher.py
-│   ├── main.py   
-│   ├── run.bat
-│   ├── run_launcher.sh
-│   ├── run.sh
-│   ├── secrets
-│   │   ├── secrets.env
-│   │   └── secrets.env.example
-│   ├── tools
-│   │   ├── company_CIK.py
-│   │   ├── company_tickers.json
-│   │   ├── edgar_submissions.py
-│   │   ├── __init__.py
-│   │   ├── local_llm_rag.py
-│   │   ├── models
-│   │   │   └── Llama-3.2-1B-Instruct-Q4_K_M.gguf
-│   │   ├── sec_search_rag.py
-│   │   ├── today_date.py
-│   │   ├── xbrl_company_concept.py
-│   │   ├── xbrl_company_facts.py
-│   │   ├── xbrl_frames.py
-│   │   └── yfinance_search.py
-│   ├── utils
-│   │   ├── env_setup.py
-│   │   ├── llm_judge_old.py
-│   │   ├── llm_judge.py
-│   │   ├── llm_manager.py
-│   │   ├── local_llm_wrapper.py
-│   └── white_agent_mcp_memory.py
-├── readme.md
-└── requirements.txt
+The following is a **logical module map** of the newer architecture, not a claim that every file exists at exactly this path in every checkout:
 
+```text
+finance-agent-benchmark/
+├── launcher.py                 # Green service entry point
+├── src/
+│   ├── server.py               # A2A server, routes, and MCP service wiring
+│   ├── agent.py                # Assessment agent coordination
+│   ├── executer.py             # Task execution and result aggregation
+│   ├── messenger.py            # A2A communication with Purple
+│   ├── mcp_tools.py            # MCP tool registration
+│   ├── utils/
+│   │   ├── llm_judge.py        # Semantic/numeric answer evaluation
+│   │   └── llm_manager.py      # LLM configuration/helper logic
+│   └── ...                     # SEC/XBRL/RAG tool implementations
+├── data/
+│   └── public.csv              # Benchmark questions and reference answers
+├── cache/
+│   └── sec/                    # Optional SEC filing cache
+├── requirements.txt
+└── README.md
+
+# Purple Agent: independent repository and container
+# ghcr.io/kiarashyavari/finance-purple-agent:latest
 ```
 
 ## Key Features
 
 ### 1. Dynamic Tool Discovery
-- White agent discovers tools via MCP `tools/list` at runtime
-- No hardcoded tool knowledge required
-- Supports adding new tools without code changes
 
-### 2. Conversation Memory
-- White agent maintains conversation history
-- Tracks tool calls and results
-- Enables multi-turn reasoning
+- Green exposes a reusable suite of SEC and financial-analysis tools over MCP.
+- Compatible Purple Agents can discover tool schemas at runtime.
+- Tool implementations can evolve without embedding them in the participant's code.
+
+### 2. Independent Agent Reasoning
+
+- Purple controls its own reasoning process, tool selection, and answer generation.
+- Different agent implementations can be evaluated against the same Green benchmark.
+- Memory and multi-step reasoning are optional participant capabilities rather than Green Agent assumptions.
 
 ### 3. Error Resilience
-- Automatic fallback to alternative tools
-- Handles API failures gracefully
-- Retries with exponential backoff
+
+- SEC requests can use retry/backoff for transient throttling and service errors.
+- Optional disk caching reduces repeated SEC retrieval work.
+- Separating the A2A and MCP interfaces makes service failures easier to isolate.
 
 ### 4. AgentBeats Compliance
-- A2A protocol for agent communication
-- Agent cards expose capabilities
-- Health checks and reset endpoints
-- Stateless assessment runs
+
+- A2A-compatible agent card and assessment endpoint.
+- MCP-based financial tools.
+- Health endpoint for service checks.
+- Structured scoring results for the AgentBeats evaluation and leaderboard workflow.
 
 ## Evaluation Metrics
 
-Match the answers rubrics that is on the dataset semantically. These rubrics are different based on each question's category and a series of steps to answer a particular question.
+The Green Agent evaluates each Purple Agent answer against the corresponding benchmark reference answer. Its LLM judge is intended to accommodate semantically equivalent phrasing, numeric equivalence, and task-specific interpretation rather than relying only on exact string matching.
+
+The primary aggregate metric is **accuracy**:
+
+```text
+accuracy = correct_tasks / total_tasks
+```
+
+The result payload can report `accuracy`, `correct_tasks`, and `total_tasks`, together with any additional task-level details emitted by the current evaluator. The leaderboard reads the structured assessment artifacts/results returned through the A2A integration. A valid A2A response alone is not sufficient if the assessment results are not included in the expected output structure.
 
 ## References
 
-- **Vals.ai Benchmark**: [vals.ai/benchmarks/finance_agent](https://www.vals.ai/benchmarks/finance_agent)
-- **Vals.ai GitHub**: [github.com/vals-ai/finance-agent](https://github.com/vals-ai/finance-agent)
-- **AgentBeats**: [github.com/agentbeats](https://github.com/agentbeats)
-- **MCP Specification**: [modelcontextprotocol.io](https://modelcontextprotocol.io)
-- **A2A Protocol**: [Google A2A Announcement](https://developers.google.com/a2a)
-- **Edgar APIs**: [SEC.gov APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)
-- **agent Beates Docs**: [Berkeley RDI platform](https://docs.agentbeats.org/)
+- **Vals.ai Benchmark:** https://www.vals.ai/benchmarks/finance_agent
+- **Vals.ai GitHub:** https://github.com/vals-ai/finance-agent
+- **AgentBeats:** https://github.com/agentbeats
+- **AgentBeats Documentation:** https://docs.agentbeats.org/
+- **MCP Specification:** https://modelcontextprotocol.io/
+- **A2A Protocol:** https://a2a-protocol.org/
+- **SEC EDGAR APIs:** https://www.sec.gov/search-filings/edgar-application-programming-interfaces
 
 ## Contributing
 
-This is an academic project for UC Berkeley's Agentic AI class. Contributions should align with the assignment requirements.
+This project originated as a UC Berkeley Agentic AI class project and is intended to support reproducible financial-agent evaluation. Contributions to the Green Agent should preserve the A2A assessment contract, MCP tool compatibility, and consistent scoring behavior. Purple Agent improvements can be developed and evaluated independently.
 
 ## License
 
-MIT License - See LICENSE file for details
+MIT License — see the repository's LICENSE file for details.
 
 ## Acknowledgments
 
-- **Vals.ai** for the original Finance-Agent-Benchmark
-- **UC Berkeley** for the AgentBeats framework
-- **Course Instructors** for guidance and support
+- **Vals.ai** for the original Finance-Agent-Benchmark.
+- **UC Berkeley / AgentBeats** for the agent evaluation ecosystem.
+- **Course instructors and collaborators** for guidance and feedback.
 
 ## Contact
 
-- Fabio - inphlection@gmail.com
-- Kiarash - kiarash996@gmail.com
-- Milad - milad.eslamzadeh@teleperformance.com
+- Fabio — inphlection@gmail.com
+- Kiarash — kiarash996@gmail.com
+- Milad — milad.eslamzadeh@teleperformance.com
 
 ---
 
-**Status**: ✅ Development Complete | 🚀 Ready for AgentBeats Submission
+**Status:** AgentBeats-integrated Green/Purple architecture; containerized benchmark and participant images available.
